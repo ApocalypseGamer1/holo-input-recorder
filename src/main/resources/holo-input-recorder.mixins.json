@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "holorecorder.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "MouseHandlerMixin",
+    "LocalPlayerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

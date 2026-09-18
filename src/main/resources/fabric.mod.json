@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "holo_input_recorder",
+  "version": "${version}",
+  "name": "Holo Input Recorder",
+  "description": "Adds exact client input timing to consented Holo practice recordings.",
+  "authors": ["MoboHost"],
+  "license": "All-Rights-Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["holorecorder.HoloInputRecorder"]
+  },
+  "mixins": ["holo-input-recorder.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.5",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
