@@ -8,14 +8,20 @@ Captured fields include movement keys, jump, sneak, sprint, attack and use state
 
 ## Install
 
+No building needed: download the JAR from
+[the latest release](https://github.com/ApocalypseGamer1/holo-input-recorder/releases/latest)
+([direct link](https://github.com/ApocalypseGamer1/holo-input-recorder/releases/download/v1.0.0/holo-input-recorder-1.0.0.jar)).
+
 1. Install Fabric Loader for Minecraft 1.21.5.
 2. Install Fabric API for Minecraft 1.21.5.
-3. Put the release JAR in the client `mods` folder.
+3. Put `holo-input-recorder-1.0.0.jar` in the client `mods` folder.
 4. Restart Minecraft.
 
 The client shows `Holo input capture active for this round` when recording starts and `Holo input capture saved` when it stops.
 
 ## Build
+
+Only needed if you want to change the mod; the release JAR above is the same build.
 
 ```text
 ./gradlew build
