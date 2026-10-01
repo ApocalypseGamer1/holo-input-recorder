@@ -16,12 +16,10 @@ No building needed: download the JAR from
 
 1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 26.3 (Loader 0.19.5 or newer, Java 25).
 2. Install [Fabric API](https://modrinth.com/mod/fabric-api/versions?g=26.3) for Minecraft 26.3.
-3. Put `holo-input-recorder-1.2.0.jar` in the client `mods` folder. Remove any older copy first: two copies of the same mod stop Minecraft from starting.
+3. Put `holo-input-recorder-1.2.0.jar` in the client `mods` folder.
 4. Restart Minecraft.
 
 The client shows `Holo input capture active for this round` when recording starts and `Holo input capture saved` when it stops.
-
-Version 1.1.0 is the last release for Minecraft 1.21.5.
 
 ## Build
 
