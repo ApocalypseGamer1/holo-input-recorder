@@ -2,6 +2,7 @@ package holorecorder.mixin;
 
 import holorecorder.RawInputCapture;
 import net.minecraft.client.MouseHandler;
+import net.minecraft.client.input.MouseButtonInfo;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -12,8 +13,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class MouseHandlerMixin {
     @Shadow private double accumulatedDX;
     @Shadow private double accumulatedDY;
-    @Shadow private double xpos;
-    @Shadow private double ypos;
     @Shadow private boolean mouseGrabbed;
     @Shadow private boolean ignoreFirstMove;
 
@@ -23,19 +22,19 @@ abstract class MouseHandlerMixin {
     }
 
     /**
-     * The GLFW cursor-position callback, one call per queued event. At HEAD {@code xpos}/{@code ypos} still
-     * hold the previous position, so the difference is that single report's delta - with raw mouse motion on,
-     * one per mouse poll rather than one merged delta per frame.
+     * The cursor callback, one call per queued event. 26.x passes the per-event delta ({@code dx}, {@code dy})
+     * itself and adds it to {@code accumulatedDX/DY} while the mouse is grabbed, so this is the same quantity
+     * as the tick total - with raw mouse motion on, one report per mouse poll rather than one merged delta per frame.
      */
     @Inject(method = "onMove", at = @At("HEAD"))
-    private void holo$rawMove(long window, double x, double y, CallbackInfo ci) {
-        if (mouseGrabbed && !ignoreFirstMove) RawInputCapture.move(x - xpos, y - ypos);
+    private void holo$rawMove(long window, double x, double y, double dx, double dy, CallbackInfo ci) {
+        if (mouseGrabbed && !ignoreFirstMove) RawInputCapture.move(dx, dy);
     }
 
-    @Inject(method = "onPress", at = @At("HEAD"))
-    private void holo$rawPress(long window, int button, int action, int modifiers, CallbackInfo ci) {
-        if (action == 1) RawInputCapture.mousePress(button);
-        if (action == 1 || action == 0) RawInputCapture.button(button, action == 1, modifiers);
+    @Inject(method = "onButton", at = @At("HEAD"))
+    private void holo$rawPress(long window, MouseButtonInfo info, int action, CallbackInfo ci) {
+        if (action == 1) RawInputCapture.mousePress(info.button());
+        if (action == 1 || action == 0) RawInputCapture.button(info.button(), action == 1, info.modifiers());
     }
 
     @Inject(method = "onScroll", at = @At("HEAD"))

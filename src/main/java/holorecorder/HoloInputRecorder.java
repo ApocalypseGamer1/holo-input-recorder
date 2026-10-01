@@ -27,15 +27,21 @@ public final class HoloInputRecorder implements ClientModInitializer {
     private static long sequence;
     private static float previousYaw, previousPitch;
     private static boolean haveView;
-    /** GLFW key codes the player has bound to a game control; nothing else is ever logged. */
-    private static final Set<Integer> boundKeys = new HashSet<>();
+    /**
+     * Key codes (SDL3 scancodes) the player has bound to a game control; nothing else is ever logged.
+     *
+     * <p>Replaced wholesale rather than mutated: it is read on the render thread from the key callback and
+     * written on the client tick, so a HashSet being rebuilt in place could be observed half-cleared and let
+     * an unbound key through.
+     */
+    private static volatile Set<Integer> boundKeys = Set.of();
     private static final Logger LOG = LoggerFactory.getLogger("holorec-client");
     private static long eventPackets, eventsSent;
 
     @Override public void onInitializeClient() {
-        PayloadTypeRegistry.playC2S().register(ClientInputPayload.TYPE, ClientInputPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(ClientEventsPayload.TYPE, ClientEventsPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(RoundStatePayload.TYPE, RoundStatePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ClientInputPayload.TYPE, ClientInputPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ClientEventsPayload.TYPE, ClientEventsPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(RoundStatePayload.TYPE, RoundStatePayload.CODEC);
         ClientPlayNetworking.registerGlobalReceiver(RoundStatePayload.TYPE, (payload, context) ->
                 context.client().execute(() -> setRound(context.client(), payload)));
         ClientTickEvents.START_CLIENT_TICK.register(HoloInputRecorder::captureTick);
@@ -57,7 +63,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
         RawInputCapture.arm(false, HoloInputRecorder::isBoundKey);
         if (client.player != null) {
             String text = active ? "Holo input capture active for this round." : "Holo input capture saved.";
-            client.player.displayClientMessage(Component.literal(text), true);
+            client.player.sendOverlayMessage(Component.literal(text));
         }
     }
 
@@ -92,11 +98,10 @@ public final class HoloInputRecorder implements ClientModInitializer {
         if (client.options.keyUse.isDown()) flags |= 1 << 8;
         if (p.isSprinting()) flags |= 1 << 9;
         if (p.isUsingItem()) flags |= 1 << 10;
-        if (client.screen != null) flags |= 1 << 11;
+        if (client.gui.screen() != null) flags |= 1 << 11;
 
-        ClientPlayNetworking.send(new ClientInputPayload(ClientInputPayload.VERSION, roundId, ++sequence,
-                p.tickCount, System.currentTimeMillis(), raw.dx(), raw.dy(), turnYaw, turnPitch, flags,
-                raw.swings(), raw.leftPresses(), raw.rightPresses(), p.getInventory().getSelectedSlot()));
+        ClientPlayNetworking.send(ClientInputPayload.of(roundId, ++sequence, p.tickCount, System.currentTimeMillis(),
+                raw, turnYaw, turnPitch, flags, p.getInventory().getSelectedSlot()));
 
         if (events.size() > 0 && ClientPlayNetworking.canSend(ClientEventsPayload.TYPE)) {
             eventPackets++;
@@ -106,23 +111,27 @@ public final class HoloInputRecorder implements ClientModInitializer {
                     events.offsetMicros(), events.types(), events.a(), events.b()));
         }
         // Capture only while a consented round runs and no screen is open, so typing is never seen.
-        RawInputCapture.arm(client.screen == null, HoloInputRecorder::isBoundKey);
+        RawInputCapture.arm(client.gui.screen() == null, HoloInputRecorder::isBoundKey);
     }
 
-    /** True when the GLFW key is bound to one of the player's game controls. */
-    static boolean isBoundKey(int glfwKey) {
-        return boundKeys.contains(glfwKey);
+    /** True when the key is bound to one of the player's game controls. */
+    static boolean isBoundKey(int key) {
+        return boundKeys.contains(key);
     }
 
     private static void refreshBoundKeys(Minecraft client) {
-        boundKeys.clear();
-        if (client.options == null) return;
+        if (client.options == null) {
+            boundKeys = Set.of();
+            return;
+        }
+        Set<Integer> bound = new HashSet<>();
         for (KeyMapping mapping : client.options.keyMappings) {
             InputConstants.Key key = ((KeyMappingAccessor) (Object) mapping).holo$currentKey();
-            if (key != null && key.getType() == InputConstants.Type.KEYSYM && key.getValue() >= 0) {
-                boundKeys.add(key.getValue());
+            if (key != null && key.getType() == InputConstants.Type.KEYBOARD && key.getValue() >= 0) {
+                bound.add(key.getValue());
             }
         }
+        boundKeys = Set.copyOf(bound);
     }
 
     private static float wrapDegrees(float degrees) {

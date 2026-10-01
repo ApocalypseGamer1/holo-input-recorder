@@ -2,6 +2,7 @@ package holorecorder.mixin;
 
 import holorecorder.RawInputCapture;
 import net.minecraft.client.KeyboardHandler;
+import net.minecraft.client.input.KeyEvent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -14,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(KeyboardHandler.class)
 abstract class KeyboardHandlerMixin {
     @Inject(method = "keyPress", at = @At("HEAD"))
-    private void holo$keyPress(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
-        RawInputCapture.key(key, action, modifiers);
+    private void holo$keyPress(long window, int action, KeyEvent event, CallbackInfo ci) {
+        RawInputCapture.key(event.key(), action, event.modifiers());
     }
 }

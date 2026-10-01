@@ -1,11 +1,12 @@
 package holorecorder;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import holorecorder.protocol.ClientEventsPayload;
 
 /**
- * Render-thread counters drained once at the start of each client tick, plus the sub-tick GLFW event log.
+ * Render-thread counters drained once at the start of each client tick, plus the sub-tick input event log.
  *
- * <p>The counters keep the tick row exactly as it was. The event log is additive: every GLFW callback that
+ * <p>The counters keep the tick row exactly as it was. The event log is additive: every SDL input event that
  * fires between two drains is stored with the microsecond offset at which it ran, so a 1000 Hz mouse with raw
  * input on lands about one move event per millisecond.
  *
@@ -14,7 +15,8 @@ import holorecorder.protocol.ClientEventsPayload;
  * captured: a screen closes the gate, and character input is not hooked at all.
  */
 public final class RawInputCapture {
-    public record Snapshot(double dx, double dy, int leftPresses, int rightPresses, int swings) {}
+    /** {@code swings} = attack swings (left click, ServerboundPunchPacket); {@code useSwings} = right-click use swings. */
+    public record Snapshot(double dx, double dy, int leftPresses, int rightPresses, int swings, int useSwings) {}
 
     /** One tick of sub-tick events, already packed into the parallel arrays the payload sends. */
     public record Events(int[] offsetMicros, byte[] types, float[] a, float[] b, int dropped, long baseUnixMs) {
@@ -24,7 +26,7 @@ public final class RawInputCapture {
     private static final int CAPACITY = ClientEventsPayload.MAX_EVENTS;
 
     private static double dx, dy;
-    private static int leftPresses, rightPresses, swings;
+    private static int leftPresses, rightPresses, swings, useSwings;
 
     private static final int[] offsets = new int[CAPACITY];
     private static final byte[] types = new byte[CAPACITY];
@@ -37,8 +39,8 @@ public final class RawInputCapture {
     private static volatile boolean armed;
     private static volatile KeyFilter keyFilter = key -> false;
 
-    /** Answers whether a GLFW key code is bound to a game control, so unbound keys are never logged. */
-    public interface KeyFilter { boolean allows(int glfwKey); }
+    /** Answers whether a key code is bound to a game control, so unbound keys are never logged. */
+    public interface KeyFilter { boolean allows(int key); }
 
     private RawInputCapture() {}
 
@@ -52,13 +54,18 @@ public final class RawInputCapture {
     public static synchronized void mouseTurn(double x, double y) { dx += x; dy += y; }
 
     public static synchronized void mousePress(int button) {
-        if (button == 0) leftPresses++;
-        else if (button == 1) rightPresses++;
+        if (button == InputConstants.MOUSE_BUTTON_LEFT) leftPresses++;
+        else if (button == InputConstants.MOUSE_BUTTON_RIGHT) rightPresses++;
     }
 
     public static synchronized void swing() {
         swings++;
         record(ClientEventsPayload.TYPE_SWING, 0.0f, 0.0f);
+    }
+
+    public static synchronized void useSwing() {
+        useSwings++;
+        record(ClientEventsPayload.TYPE_SWING, 0.0f, ClientEventsPayload.SWING_USE);
     }
 
     public static synchronized void move(double rawDx, double rawDy) {
@@ -71,15 +78,15 @@ public final class RawInputCapture {
                 button, modifiers);
     }
 
-    public static synchronized void key(int glfwKey, int action, int modifiers) {
-        if (!keyFilter.allows(glfwKey)) return;
+    public static synchronized void key(int key, int action, int modifiers) {
+        if (!keyFilter.allows(key)) return;
         byte type = switch (action) {
             case 1 -> ClientEventsPayload.TYPE_KEY_DOWN;
             case 0 -> ClientEventsPayload.TYPE_KEY_UP;
-            case 2 -> ClientEventsPayload.TYPE_KEY_REPEAT;
+            case -1 -> ClientEventsPayload.TYPE_KEY_REPEAT;
             default -> -1;
         };
-        if (type >= 0) record(type, glfwKey, modifiers);
+        if (type >= 0) record(type, key, modifiers);
     }
 
     public static synchronized void scroll(double xOffset, double yOffset) {
@@ -98,8 +105,8 @@ public final class RawInputCapture {
     }
 
     public static synchronized Snapshot drain() {
-        Snapshot out = new Snapshot(dx, dy, leftPresses, rightPresses, swings);
-        dx = dy = 0.0; leftPresses = rightPresses = swings = 0;
+        Snapshot out = new Snapshot(dx, dy, leftPresses, rightPresses, swings, useSwings);
+        dx = dy = 0.0; leftPresses = rightPresses = swings = useSwings = 0;
         return out;
     }
 
@@ -119,7 +126,7 @@ public final class RawInputCapture {
     }
 
     public static synchronized void clear() {
-        dx = dy = 0.0; leftPresses = rightPresses = swings = 0;
+        dx = dy = 0.0; leftPresses = rightPresses = swings = useSwings = 0;
         resetWindow();
     }
 }
