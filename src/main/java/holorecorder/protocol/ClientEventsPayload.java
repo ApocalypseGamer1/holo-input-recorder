@@ -3,24 +3,28 @@ package holorecorder.protocol;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /**
- * Sub-tick GLFW input events for one client tick, sent beside {@link ClientInputPayload}.
+ * Sub-tick input events (SDL3 on 26.x) for one client tick, sent beside {@link ClientInputPayload}.
  *
- * <p>GLFW has no clock of its own: callbacks fire while Minecraft pumps the event queue once per frame, so
- * key and button timing resolves to the frame time. Mouse motion is the exception - with raw mouse motion on
- * (the vanilla "Raw input" option) Windows delivers one un-merged report per mouse poll, so a 1000 Hz mouse
+ * <p>The event loop has no per-event clock here: events are handed over while Minecraft pumps the event queue once per frame, so
+ * key and button timing resolves to the frame time. Mouse motion is the exception - SDL relative mouse mode
+ * delivers one un-merged report per mouse poll (to be confirmed live on 26.3), so a 1000 Hz mouse
  * produces one move event per millisecond. Every event therefore carries the microsecond offset at which the
  * callback ran, not a hardware timestamp.
+ *
+ * <p>26.x reads SDL3, not GLFW: key codes are SDL scancodes (the codes {@code KeyMapping} uses), mouse buttons are
+ * 1 left / 2 middle / 3 right, and a key repeat is action -1. Rows with {@code client_capture_version >= 2} use these.
  *
  * <p>The arrays are parallel and all the same length. Meaning of {@code a} and {@code b} per {@code type}:
  * <ul>
  *   <li>{@link #TYPE_MOUSE_MOVE} - a = raw dx, b = raw dy (pixels, before sensitivity)</li>
- *   <li>{@link #TYPE_BUTTON_DOWN} / {@link #TYPE_BUTTON_UP} - a = GLFW button, b = modifier bits</li>
- *   <li>{@link #TYPE_KEY_DOWN} / {@link #TYPE_KEY_UP} / {@link #TYPE_KEY_REPEAT} - a = GLFW key, b = modifier bits</li>
+ *   <li>{@link #TYPE_BUTTON_DOWN} / {@link #TYPE_BUTTON_UP} - a = button, b = modifier bits (SDL_Keymod)</li>
+ *   <li>{@link #TYPE_KEY_DOWN} / {@link #TYPE_KEY_UP} / {@link #TYPE_KEY_REPEAT} - a = key (SDL scancode), b = modifier bits (SDL_Keymod)</li>
  *   <li>{@link #TYPE_SCROLL} - a = x offset, b = y offset</li>
- *   <li>{@link #TYPE_SWING} - a = 0, b = 0</li>
+ *   <li>{@link #TYPE_SWING} - a = 0; b = 0 for an attack swing (left click, punch packet), b = {@link #SWING_USE} for a use swing
+ *       (right click that animates the arm). The backend accepts only types 0-7, so no new type was added.</li>
  * </ul>
  */
 public record ClientEventsPayload(
@@ -39,9 +43,18 @@ public record ClientEventsPayload(
     public static final byte TYPE_KEY_REPEAT = 5;
     public static final byte TYPE_SCROLL = 6;
     public static final byte TYPE_SWING = 7;
+    public static final float SWING_USE = 1.0f;
+
+    public ClientEventsPayload {
+        if (offsetMicros.length != types.length || offsetMicros.length != a.length
+                || offsetMicros.length != b.length) {
+            throw new IllegalArgumentException("client event arrays must be the same length: "
+                    + offsetMicros.length + "/" + types.length + "/" + a.length + "/" + b.length);
+        }
+    }
 
     public static final Type<ClientEventsPayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath("holoserver", "client_events_v1"));
+            Identifier.fromNamespaceAndPath("holoserver", "client_events_v1"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientEventsPayload> CODEC = StreamCodec.of(
             (buf, v) -> {

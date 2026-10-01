@@ -1,25 +1,27 @@
 # Holo Input Recorder
 
-A small Fabric client mod for Minecraft 1.21.5. It records exact player input timing during consented Holo practice rounds.
+A small Fabric client mod for Minecraft Java 26.3. It records exact player input timing during consented Holo practice rounds.
 
 The mod sends one custom Minecraft packet per active round tick to the connected game server. It does not open an external network connection, upload files, or contain private service keys. It stays idle unless a compatible server starts a recorded round.
 
-Captured fields include movement keys, jump, sneak, sprint, attack and use state, main-hand swings, raw left and right mouse presses, raw mouse motion before sensitivity, applied yaw and pitch, selected hotbar slot, screen state, and item-use state.
+Captured fields include movement keys, jump, sneak, sprint, attack and use state, attack swings (left click) and use swings (right click) counted apart, raw left and right mouse presses, raw mouse motion before sensitivity, applied yaw and pitch, selected hotbar slot, screen state, and item-use state.
 
-It also sends a sub-tick event log: each mouse movement, mouse button, bound-key press or release, scroll and swing, with the microsecond offset at which the GLFW callback ran. GLFW does not fire on a clock, so key and button timing resolves to the frame time. Mouse motion is the exception: with the vanilla "Raw input" option on, one event arrives per mouse report, so a 1000 Hz mouse gives about one movement per millisecond.
+It also sends a sub-tick event log: each mouse movement, mouse button, bound-key press or release, scroll and swing, with the microsecond offset at which the input event was handled. Minecraft 26.x reads input through SDL3, which does not fire on a clock, so key and button timing resolves to the frame time. Mouse motion is the exception: with relative mouse mode, one event arrives per mouse report, so a 1000 Hz mouse gives about one movement per millisecond.
 
 ## Install
 
 No building needed: download the JAR from
 [the latest release](https://github.com/ApocalypseGamer1/holo-input-recorder/releases/latest)
-([direct link](https://github.com/ApocalypseGamer1/holo-input-recorder/releases/download/v1.1.0/holo-input-recorder-1.1.0.jar)).
+([direct link](https://github.com/ApocalypseGamer1/holo-input-recorder/releases/download/v1.2.0/holo-input-recorder-1.2.0.jar)).
 
-1. Install Fabric Loader for Minecraft 1.21.5.
-2. Install Fabric API for Minecraft 1.21.5.
-3. Put `holo-input-recorder-1.1.0.jar` in the client `mods` folder. Remove any older copy first: two copies of the same mod stop Minecraft from starting.
+1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 26.3 (Loader 0.19.5 or newer, Java 25).
+2. Install [Fabric API](https://modrinth.com/mod/fabric-api/versions?g=26.3) for Minecraft 26.3.
+3. Put `holo-input-recorder-1.2.0.jar` in the client `mods` folder. Remove any older copy first: two copies of the same mod stop Minecraft from starting.
 4. Restart Minecraft.
 
 The client shows `Holo input capture active for this round` when recording starts and `Holo input capture saved` when it stops.
+
+Version 1.1.0 is the last release for Minecraft 1.21.5.
 
 ## Build
 
