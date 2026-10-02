@@ -83,7 +83,7 @@ class ClientModsPayloadTest {
         assertThrows(IllegalArgumentException.class, () -> ClientModsPayload.CODEC.decode(buf));
     }
 
-    @Test void theReportIsSentOnlyWhenTheServerSpeaksTheRecorderProtocol() {
+    @Test void theReportIsSentOnlyWhenTheServerDeclaredTheChannel() {
         AtomicInteger built = new AtomicInteger(), sent = new AtomicInteger();
         assertFalse(ClientModsReport.sendIfSupported(() -> false,
                 () -> { built.incrementAndGet(); return ClientModsPayload.of("1", List.of()); },

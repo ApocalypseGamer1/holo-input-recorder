@@ -11,17 +11,17 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/** Mod list for data protection; sent only to a server that has declared the recorder protocol. */
+/** Mod list for data protection; sent only to a server that has declared the channel. */
 final class ClientModsReport {
     private ClientModsReport() {}
 
     /**
-     * Sends the report when {@code serverSpeaksProtocol} is true; otherwise builds nothing and sends nothing.
+     * Sends the report when {@code serverAcceptsChannel} is true; otherwise builds nothing and sends nothing.
      * Returns whether it was sent.
      */
-    static boolean sendIfSupported(BooleanSupplier serverSpeaksProtocol, Supplier<ClientModsPayload> report,
+    static boolean sendIfSupported(BooleanSupplier serverAcceptsChannel, Supplier<ClientModsPayload> report,
             Consumer<ClientModsPayload> sender) {
-        if (!serverSpeaksProtocol.getAsBoolean()) return false;
+        if (!serverAcceptsChannel.getAsBoolean()) return false;
         sender.accept(report.get());
         return true;
     }
