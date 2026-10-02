@@ -55,23 +55,23 @@ public final class HoloInputRecorder implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(IntegrityChallengePayload.TYPE, (payload, context) ->
                 answerIntegrity(context.client(), payload));
         ClientTickEvents.START_CLIENT_TICK.register(HoloInputRecorder::captureTick);
-        // Mod list for data protection: once per connection (JOIN also fires after a transfer), recorder servers only.
+        // Mod list for data protection: once per connection (JOIN also fires after a transfer), only if the server declared the channel.
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> ClientModsReport.sendIfSupported(
-                () -> ClientPlayNetworking.canSend(ClientInputPayload.TYPE), ClientModsReport::fromLoader,
+                () -> ClientPlayNetworking.canSend(ClientModsPayload.TYPE), ClientModsReport::fromLoader,
                 ClientPlayNetworking::send));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());
     }
 
-    /** File check for data protection: one response per challenge, hashed off the render thread, recorder servers only. */
+    /** File check for data protection: one response per challenge, hashed off the render thread, only if the server declared the channel. */
     private static void answerIntegrity(Minecraft client, IntegrityChallengePayload challenge) {
         if (challenge.version() != IntegrityChallengePayload.VERSION
-                || !ClientPlayNetworking.canSend(ClientInputPayload.TYPE)
+                || !ClientPlayNetworking.canSend(IntegrityResponsePayload.TYPE)
                 || !integrityBusy.compareAndSet(false, true)) return;
         Thread.ofPlatform().daemon().name("holo-file-check").start(() -> {
             try {
                 IntegrityResponsePayload response = IntegrityCheck.respond(challenge);
                 client.execute(() -> {
-                    if (ClientPlayNetworking.canSend(ClientInputPayload.TYPE)) ClientPlayNetworking.send(response);
+                    if (ClientPlayNetworking.canSend(IntegrityResponsePayload.TYPE)) ClientPlayNetworking.send(response);
                 });
             } finally {
                 integrityBusy.set(false);
