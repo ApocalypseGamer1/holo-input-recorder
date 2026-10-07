@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import holorecorder.protocol.ClientEventsPayload;
 import holorecorder.protocol.ClientInputPayload;
 import holorecorder.protocol.ClientModsPayload;
+import holorecorder.protocol.ClientModsV2Payload;
 import holorecorder.protocol.IntegrityChallengePayload;
 import holorecorder.protocol.IntegrityResponsePayload;
 import holorecorder.protocol.RoundStatePayload;
@@ -21,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -47,6 +49,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
         PayloadTypeRegistry.serverboundPlay().register(ClientInputPayload.TYPE, ClientInputPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(ClientEventsPayload.TYPE, ClientEventsPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(ClientModsPayload.TYPE, ClientModsPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ClientModsV2Payload.TYPE, ClientModsV2Payload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(IntegrityResponsePayload.TYPE, IntegrityResponsePayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(RoundStatePayload.TYPE, RoundStatePayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(IntegrityChallengePayload.TYPE, IntegrityChallengePayload.CODEC);
@@ -55,11 +58,36 @@ public final class HoloInputRecorder implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(IntegrityChallengePayload.TYPE, (payload, context) ->
                 answerIntegrity(context.client(), payload));
         ClientTickEvents.START_CLIENT_TICK.register(HoloInputRecorder::captureTick);
-        // Mod list for data protection: once per connection (JOIN also fires after a transfer), only if the server declared the channel.
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> ClientModsReport.sendIfSupported(
-                () -> ClientPlayNetworking.canSend(ClientModsPayload.TYPE), ClientModsReport::fromLoader,
-                ClientPlayNetworking::send));
+        // Mod list for data protection: once per connection (JOIN also fires after a transfer), only if the server declared
+        // the channel. Version 2 (with file fingerprints) when the server takes it, else version 1.
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            if (ClientPlayNetworking.canSend(ClientModsV2Payload.TYPE)) {
+                sendModsV2(client, handler);
+            } else {
+                ClientModsReport.sendIfSupported(() -> ClientPlayNetworking.canSend(ClientModsPayload.TYPE),
+                        ClientModsReport::fromLoader, ClientPlayNetworking::send);
+            }
+        });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());
+    }
+
+    /**
+     * Mod list version 2: fingerprints are computed off the render thread, then every part is sent on the client thread,
+     * only while the same connection is still open and the server still takes the channel. Every join gets its own
+     * report (a transfer to another server included); the fingerprint cache makes repeats cheap.
+     */
+    private static void sendModsV2(Minecraft client, Object connection) {
+        Thread.ofPlatform().daemon().name("holo-mod-report").start(() -> {
+            try {
+                List<ClientModsV2Payload> parts = ClientModsReport.fromLoaderV2();
+                client.execute(() -> {
+                    if (client.getConnection() != connection || !ClientPlayNetworking.canSend(ClientModsV2Payload.TYPE)) return;
+                    for (ClientModsV2Payload part : parts) ClientPlayNetworking.send(part);
+                });
+            } catch (RuntimeException e) {
+                LOG.warn("holorec: mod report not sent: {}", e.toString());
+            }
+        });
     }
 
     /** File check for data protection: one response per challenge, hashed off the render thread, only if the server declared the channel. */

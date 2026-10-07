@@ -33,7 +33,9 @@ The JAR is written to `build/libs/`.
 
 ## Privacy
 
-**Data protection:** To keep the training data clean, the mod also sends the server the list of your installed mods and a check that the mod itself hasn't been changed. This is only used to detect cheating or tampering with the data.
+**Data protection:** To keep the training data clean, the mod also sends the server the list of your installed mods and a check that the mod itself hasn't been changed. This is only used to detect cheating, tampering with the data, and mods that aren't allowed on the server (such as combat recorders).
+
+From version 1.4.0 the mod list includes, for each mod, the mod it is bundled in, its file size, and a SHA-512 fingerprint of its jar file. A fingerprint is a short code computed from the file; it identifies which public mod and version a file is (the same code Modrinth uses), but the file itself is never uploaded and cannot be rebuilt from it. Nothing else from your computer is read or sent: no file names or folders, no other files, no account details. The list is sent once when you join a Holo server that asks for it, over the normal Minecraft connection.
 
 Input packets are sent only through the current Minecraft connection and only while the compatible server marks a consented round as active. The server checks the round ID and rejects invalid or stale packets.
 
