@@ -12,11 +12,11 @@ It also sends a sub-tick event log: each mouse movement, mouse button, bound-key
 
 No building needed: download the JAR from
 [the latest release](https://github.com/ApocalypseGamer1/holo-input-recorder/releases/latest)
-([direct link](https://github.com/ApocalypseGamer1/holo-input-recorder/releases/download/v1.3.0/holo-input-recorder-1.3.0.jar)).
+([direct link](https://github.com/ApocalypseGamer1/holo-input-recorder/releases/download/v1.4.0/holo-input-recorder-1.4.0.jar)).
 
 1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 26.3 (Loader 0.19.5 or newer, Java 25).
 2. Install [Fabric API](https://modrinth.com/mod/fabric-api/versions?g=26.3) for Minecraft 26.3.
-3. Put `holo-input-recorder-1.3.0.jar` in the client `mods` folder.
+3. Put `holo-input-recorder-1.4.0.jar` in the client `mods` folder.
 4. Restart Minecraft.
 
 The client shows `Holo input capture active for this round` when recording starts and `Holo input capture saved` when it stops.
