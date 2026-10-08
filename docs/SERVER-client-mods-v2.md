@@ -6,11 +6,17 @@ clients are around (a server that declares both receives v2 from 1.4.0 clients a
 
 ## Wire format (`ClientModsV2Payload`)
 
-    VarInt version (2) | String recorderVersion (<= 100) | Long reportId | VarInt part | VarInt parts | VarInt count (<= 400)
+    VarInt version (2) | String recorderVersion (<= 100) | String installId (<= 100) | Long reportId | VarInt part
+    | VarInt parts | VarInt count (<= 400)
     then per mod: String id | String version | String name | String parent (<= 100 each; parent = id of the mod this
     one is bundled in, "" for a top-level jar) | VarLong size + 1 (0 = unknown) | String sha512 (128 lowercase hex, or "")
 
-A report is `parts` packets (1..16) sharing `reportId`, numbered 0..parts-1, each under 32000 bytes. Mods are in
+A report is `parts` packets (1..16) sharing `reportId` and `installId`, numbered 0..parts-1, each under 32000 bytes.
+
+`installId` is a random 32-hex-char id the client stores in its config dir (empty if it could not be read). It is a
+SOFT signal for grouping accounts that play from one install: spoofable (the player can delete the file) and shareable
+(a copied `.minecraft`), so use it to raise a review flag or to apply a cap ACROSS the grouped UUIDs, never as an
+automatic ban on its own. The trustworthy identity is still the Mojang-authenticated UUID. Mods are in
 order: top-level jars first, then bundled ones, each group by id. Only top-level jars carry a fingerprint; a bundled
 mod's bytes are covered by its parent's.
 
@@ -20,6 +26,8 @@ mod's bytes are covered by its parent's.
    treat a missing or incomplete report as "no report"). Reject a second reportId on the same connection.
 2. Store the report with the player UUID and time (keep it with the existing v1 store; same retention).
 3. Classify every fingerprint:
+   Also record the installId with the player UUID; a later step can group UUIDs by installId (and, more weakly, by IP)
+   and apply the strong-bot cap across a group or flag it for review. Never auto-ban on installId/IP alone.
    - **blocked**: in the server's blocklist (config: list of sha512 and of mod ids, each with a reason) -> refuse.
    - **known**: in the server's local cache of identified fingerprints -> fine.
    - **unknown**: look it up with Modrinth's bulk endpoint `POST https://api.modrinth.com/v2/version_files`
