@@ -41,6 +41,16 @@ final class ClientModsReport {
         return all;
     }
 
+    /** The per-install id from the mod's config dir (see {@link InstallIdentity}); "" if it can't be read. */
+    private static String installId() {
+        try {
+            return InstallIdentity.get(FabricLoader.getInstance().getConfigDir()
+                    .resolve("holo-input-recorder").resolve("install-id.txt"));
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
     private static String ownVersion() {
         return FabricLoader.getInstance().getModContainer("holo_input_recorder")
                 .map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("");
@@ -81,16 +91,18 @@ final class ClientModsReport {
             mods.add(ClientModsV2Payload.capped(new ClientModsV2Payload.Mod(m.getMetadata().getId(),
                     m.getMetadata().getVersion().getFriendlyString(), m.getMetadata().getName(), parent, size, sha)));
         }
-        return parts(ownVersion(), IDS.nextLong(), mods);
+        return parts(ownVersion(), installId(), IDS.nextLong(), mods);
     }
 
-    /** The report split into parts under the payload limit (at most {@link ClientModsV2Payload#MAX_PARTS}). */
-    static List<ClientModsV2Payload> parts(String recorderVersion, long reportId, List<ClientModsV2Payload.Mod> mods) {
+    /** The report split into parts under the payload limit (at most {@link ClientModsV2Payload#MAX_PARTS}); every part
+     *  carries the same reportId and install id. */
+    static List<ClientModsV2Payload> parts(String recorderVersion, String installId, long reportId,
+            List<ClientModsV2Payload.Mod> mods) {
         List<List<ClientModsV2Payload.Mod>> groups = ModReportPlan.split(mods, ClientModsReport::wireSize,
                 ModReportPlan.PART_BUDGET, ClientModsV2Payload.MAX_MODS_PER_PART, ClientModsV2Payload.MAX_PARTS);
         List<ClientModsV2Payload> out = new ArrayList<>(groups.size());
         for (int i = 0; i < groups.size(); i++) {
-            out.add(ClientModsV2Payload.of(recorderVersion, reportId, i, groups.size(), groups.get(i)));
+            out.add(ClientModsV2Payload.of(recorderVersion, installId, reportId, i, groups.size(), groups.get(i)));
         }
         return out;
     }

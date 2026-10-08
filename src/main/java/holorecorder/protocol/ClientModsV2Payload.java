@@ -16,8 +16,8 @@ import java.util.Locale;
  * {@code 0 .. parts - 1}), each under the serverbound payload limit; sent once per connection to a server that
  * declared the channel.
  */
-public record ClientModsV2Payload(int version, String recorderVersion, long reportId, int part, int parts, List<Mod> mods)
-        implements CustomPacketPayload {
+public record ClientModsV2Payload(int version, String recorderVersion, String installId, long reportId, int part,
+        int parts, List<Mod> mods) implements CustomPacketPayload {
     public static final int VERSION = 2;
     public static final int MAX_STRING = 100;
     public static final int HASH_LENGTH = 128;
@@ -34,6 +34,7 @@ public record ClientModsV2Payload(int version, String recorderVersion, long repo
             (buf, v) -> {
                 buf.writeVarInt(v.version);
                 buf.writeUtf(cut(v.recorderVersion), MAX_STRING);
+                buf.writeUtf(cut(v.installId), MAX_STRING);
                 buf.writeLong(v.reportId);
                 buf.writeVarInt(v.part);
                 buf.writeVarInt(v.parts);
@@ -52,6 +53,7 @@ public record ClientModsV2Payload(int version, String recorderVersion, long repo
             buf -> {
                 int version = buf.readVarInt();
                 String recorderVersion = buf.readUtf(MAX_STRING);
+                String installId = buf.readUtf(MAX_STRING);
                 long reportId = buf.readLong();
                 int part = buf.readVarInt();
                 int parts = buf.readVarInt();
@@ -69,17 +71,18 @@ public record ClientModsV2Payload(int version, String recorderVersion, long repo
                     if (!sha.isEmpty() && !isHex(sha)) throw new IllegalArgumentException("holo: bad sha512 for " + id);
                     mods.add(new Mod(id, ver, name, parent, size, sha));
                 }
-                return new ClientModsV2Payload(version, recorderVersion, reportId, part, parts, List.copyOf(mods));
+                return new ClientModsV2Payload(version, recorderVersion, installId, reportId, part, parts, List.copyOf(mods));
             });
 
     /** A part with the caps applied, so the encoder never refuses it. */
-    public static ClientModsV2Payload of(String recorderVersion, long reportId, int part, int parts, List<Mod> mods) {
+    public static ClientModsV2Payload of(String recorderVersion, String installId, long reportId, int part, int parts,
+            List<Mod> mods) {
         List<Mod> capped = new ArrayList<>(Math.min(mods.size(), MAX_MODS_PER_PART));
         for (Mod m : mods) {
             if (capped.size() == MAX_MODS_PER_PART) break;
             capped.add(capped(m));
         }
-        return new ClientModsV2Payload(VERSION, cut(recorderVersion), reportId, part, parts, List.copyOf(capped));
+        return new ClientModsV2Payload(VERSION, cut(recorderVersion), cut(installId), reportId, part, parts, List.copyOf(capped));
     }
 
     /** The entry as it goes on the wire: strings cut to {@link #MAX_STRING}, a malformed hash dropped, size >= -1. */

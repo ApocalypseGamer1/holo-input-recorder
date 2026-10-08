@@ -37,6 +37,8 @@ The JAR is written to `build/libs/`.
 
 From version 1.4.0 the mod list includes, for each mod, the mod it is bundled in, its file size, and a SHA-512 fingerprint of its jar file. A fingerprint is a short code computed from the file; it identifies which public mod and version a file is (the same code Modrinth uses), but the file itself is never uploaded and cannot be rebuilt from it. Nothing else from your computer is read or sent: no file names or folders, no other files, no account details. The list is sent once when you join a Holo server that asks for it, over the normal Minecraft connection.
 
+The report also carries a random install id: a number the mod makes up the first time it runs and keeps in its config folder (`config/holo-input-recorder/install-id.txt`). It lets the server notice when many accounts play from one install, to limit abuse. It is random, not taken from your hardware or your account, identifies nothing about you off this game, and you can reset it any time by deleting that file.
+
 Input packets are sent only through the current Minecraft connection and only while the compatible server marks a consented round as active. The server checks the round ID and rejects invalid or stale packets.
 
 The sub-tick event log is not a keylogger and cannot be used as one:
