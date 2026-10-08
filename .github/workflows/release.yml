@@ -1,6 +1,12 @@
 name: release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create and publish"
+        required: true
+        default: v1.4.0
   push:
     tags: ['v*']
 
@@ -22,8 +28,10 @@ jobs:
       # The single remapped mod jar (no sources/dev jars are produced).
       - id: jar
         run: echo "path=$(ls build/libs/holo-input-recorder-*.jar | grep -v -- -sources | head -1)" >> "$GITHUB_OUTPUT"
+      # On manual dispatch this creates the tag at the checked-out commit; on a tag push it reuses that tag.
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           files: ${{ steps.jar.outputs.path }}
           fail_on_unmatched_files: true
           generate_release_notes: true
