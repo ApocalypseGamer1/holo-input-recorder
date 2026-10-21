@@ -19,7 +19,8 @@ import net.minecraft.resources.Identifier;
  *
  * <p>The arrays are parallel and all the same length. Meaning of {@code a} and {@code b} per {@code type}:
  * <ul>
- *   <li>{@link #TYPE_MOUSE_MOVE} - a = raw dx, b = raw dy (pixels, before sensitivity)</li>
+ *   <li>{@link #TYPE_MOUSE_MOVE} - a = raw dx, b = raw dy (pixels, before sensitivity); in a tick with the player inventory
+ *   screen open (input flag 12) the cursor delta in window pixels</li>
  *   <li>{@link #TYPE_BUTTON_DOWN} / {@link #TYPE_BUTTON_UP} - a = button, b = modifier bits (SDL_Keymod)</li>
  *   <li>{@link #TYPE_KEY_DOWN} / {@link #TYPE_KEY_UP} / {@link #TYPE_KEY_REPEAT} - a = key (SDL scancode), b = modifier bits (SDL_Keymod)</li>
  *   <li>{@link #TYPE_SCROLL} - a = x offset, b = y offset</li>

@@ -16,7 +16,8 @@ public record ClientInputPayload(
         double rawMouseDx, double rawMouseDy, float turnYaw, float turnPitch,
         int flags, int swings, int leftPresses, int rightPresses, int selectedSlot, int useSwings
 ) implements CustomPacketPayload {
-    public static final int VERSION = 2;
+    /** 3: same bytes as 2; flag bit 12 = the player inventory screen is open (mouse input is captured inside it). */
+    public static final int VERSION = 3;
     public static final Type<ClientInputPayload> TYPE = new Type<>(
             Identifier.fromNamespaceAndPath("holoserver", "client_input_v1"));
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientInputPayload> CODEC = StreamCodec.of(

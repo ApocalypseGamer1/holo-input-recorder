@@ -10,9 +10,11 @@ import holorecorder.protocol.ClientEventsPayload;
  * fires between two drains is stored with the microsecond offset at which it ran, so a 1000 Hz mouse with raw
  * input on lands about one move event per millisecond.
  *
- * <p>Capture is gated for privacy. {@link #armed} is only true inside a consented round with no screen open,
- * and key events are refused unless the key is one the player has bound to a game control. Typing is never
- * captured: a screen closes the gate, and character input is not hooked at all.
+ * <p>Capture is gated for privacy. {@link #armed} is only true inside a consented round, and the screen the player has
+ * open is checked when each event fires: none, or the player's own inventory screen, which lets mouse moves, buttons and
+ * scrolls through but no key at all (its recipe book has a search box). Any other screen (chat, signs, books, anvils)
+ * stops everything. Key events are also refused unless the key is bound to a game control, and character input is not
+ * hooked at all, so typing is never captured.
  */
 public final class RawInputCapture {
     /** {@code swings} = attack swings (left click, ServerboundPunchPacket); {@code useSwings} = right-click use swings. */
@@ -39,6 +41,13 @@ public final class RawInputCapture {
     private static volatile boolean armed;
     private static volatile KeyFilter keyFilter = key -> false;
 
+    public static final int SCREEN_NONE = 0, SCREEN_INVENTORY = 1, SCREEN_OTHER = 2;
+
+    /** The kind of screen open right now, asked on the thread that delivers the input events. */
+    public interface ScreenProbe { int kind(); }
+
+    private static volatile ScreenProbe screenProbe = () -> SCREEN_OTHER;
+
     /** Answers whether a key code is bound to a game control, so unbound keys are never logged. */
     public interface KeyFilter { boolean allows(int key); }
 
@@ -50,6 +59,11 @@ public final class RawInputCapture {
     }
 
     public static boolean armed() { return armed; }
+
+    public static void screenProbe(ScreenProbe probe) { screenProbe = probe == null ? () -> SCREEN_OTHER : probe; }
+
+    /** Cursor moves with the mouse released: only inside the player inventory screen. */
+    public static boolean cursorCapture() { return armed && screenProbe.kind() == SCREEN_INVENTORY; }
 
     public static synchronized void mouseTurn(double x, double y) { dx += x; dy += y; }
 
@@ -95,6 +109,10 @@ public final class RawInputCapture {
 
     private static void record(byte type, float a, float b) {
         if (!armed) return;
+        int screen = screenProbe.kind();
+        if (screen == SCREEN_OTHER) return;
+        if (screen == SCREEN_INVENTORY && (type == ClientEventsPayload.TYPE_KEY_DOWN || type == ClientEventsPayload.TYPE_KEY_UP
+                || type == ClientEventsPayload.TYPE_KEY_REPEAT)) return;
         if (count >= CAPACITY) { dropped++; return; }
         long micros = (System.nanoTime() - baseNanos) / 1000L;
         offsets[count] = micros < 0 ? 0 : micros > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) micros;

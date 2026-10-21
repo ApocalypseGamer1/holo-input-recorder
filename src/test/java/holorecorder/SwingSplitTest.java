@@ -11,12 +11,18 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** Attack swings (left click) and use swings (right click) are counted apart; both reach the server payload. */
 class SwingSplitTest {
-    @BeforeEach void open() { RawInputCapture.clear(); RawInputCapture.arm(true, key -> true); }
-    @AfterEach void close() { RawInputCapture.arm(false, null); RawInputCapture.clear(); }
+    @BeforeEach void open() {
+        RawInputCapture.clear();
+        RawInputCapture.arm(true, key -> true);
+        RawInputCapture.screenProbe(() -> RawInputCapture.SCREEN_NONE);
+    }
+    @AfterEach void close() { RawInputCapture.arm(false, null); RawInputCapture.screenProbe(null); RawInputCapture.clear(); }
 
     private static RegistryFriendlyByteBuf buffer() {
         return new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
@@ -72,8 +78,53 @@ class SwingSplitTest {
         assertEquals(0, buf.readableBytes());
     }
 
-    @Test void theVersionIsTwoSoAServerStillOnVersionOneRefusesInsteadOfMisreading() {
-        assertEquals(2, ClientInputPayload.VERSION);
+    @Test void theVersionIsThreeSoAServerOnAnOlderVersionRefusesInsteadOfMisreading() {
+        assertEquals(3, ClientInputPayload.VERSION);
+    }
+
+    /** The server's golden sample (client-recorder-mv golden/payloads.hex): version 3 keeps the version 2 layout. */
+    @Test void theVersionThreeInventorySampleEncodesToTheServerGoldenBytes() {
+        RegistryFriendlyByteBuf buf = buffer();
+        ClientInputPayload.CODEC.encode(buf, new ClientInputPayload(3, "r-1", 8L, 43, 2L,
+                0.0, 0.0, 0f, 0f, 0x1800, 0, 1, 0, 2, 0));
+        byte[] bytes = new byte[buf.readableBytes()];
+        buf.readBytes(bytes);
+        assertEquals("0303722d31082b0200000000000000000000000000000000000000000000000080300001000200",
+                java.util.HexFormat.of().formatHex(bytes));
+    }
+
+    @Test void insideTheInventoryScreenMouseInputIsRecordedButNoKey() {
+        RawInputCapture.screenProbe(() -> RawInputCapture.SCREEN_INVENTORY);
+        assertTrue(RawInputCapture.cursorCapture());
+        RawInputCapture.move(3.0, -1.0);
+        RawInputCapture.button(com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT, true, 0);
+        RawInputCapture.scroll(0.0, 1.0);
+        RawInputCapture.key(26, 1, 0);
+        RawInputCapture.key(26, -1, 0);
+        RawInputCapture.key(26, 0, 0);
+        RawInputCapture.Events ev = RawInputCapture.drainEvents();
+        assertArrayEquals(new byte[] {ClientEventsPayload.TYPE_MOUSE_MOVE, ClientEventsPayload.TYPE_BUTTON_DOWN,
+                ClientEventsPayload.TYPE_SCROLL}, ev.types());
+    }
+
+    @Test void anyOtherScreenRecordsNothingAtTheMomentItOpens() {
+        RawInputCapture.screenProbe(() -> RawInputCapture.SCREEN_OTHER);
+        assertFalse(RawInputCapture.cursorCapture());
+        RawInputCapture.move(3.0, -1.0);
+        RawInputCapture.button(com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT, true, 0);
+        RawInputCapture.scroll(0.0, 1.0);
+        RawInputCapture.key(26, 1, 0);
+        RawInputCapture.swing();
+        assertEquals(0, RawInputCapture.drainEvents().size());
+        RawInputCapture.screenProbe(() -> RawInputCapture.SCREEN_INVENTORY);
+        RawInputCapture.arm(false, null);
+        assertFalse(RawInputCapture.cursorCapture(), "no round, no cursor");
+    }
+
+    @Test void beforeTheProbeIsSetNothingIsRecorded() {
+        RawInputCapture.screenProbe(null);
+        RawInputCapture.move(1.0, 1.0);
+        assertEquals(0, RawInputCapture.drainEvents().size());
     }
 
     @Test void aKeyRepeatIsActionMinusOneOnTheSdlClientAndMouseButtonsAreCountedBySdlNumber() {

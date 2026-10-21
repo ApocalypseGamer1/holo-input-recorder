@@ -28,7 +28,8 @@ abstract class MouseHandlerMixin {
      */
     @Inject(method = "onMove", at = @At("HEAD"))
     private void holo$rawMove(long window, double x, double y, double dx, double dy, CallbackInfo ci) {
-        if (mouseGrabbed && !ignoreFirstMove) RawInputCapture.move(dx, dy);
+        // Not grabbed: the cursor inside the player inventory screen (window pixels, client flag 12 marks the tick).
+        if (mouseGrabbed ? !ignoreFirstMove : RawInputCapture.cursorCapture()) RawInputCapture.move(dx, dy);
     }
 
     @Inject(method = "onButton", at = @At("HEAD"))

@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Key press and release timing. {@link RawInputCapture} refuses any key the player has not bound to a game
- * control, and the capture gate is shut whenever a screen is open, so typed text is never seen here.
+ * control, and no key is recorded while any screen is open, so typed text is never seen here.
  */
 @Mixin(KeyboardHandler.class)
 abstract class KeyboardHandlerMixin {

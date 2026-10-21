@@ -14,6 +14,8 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
 import holorecorder.mixin.KeyMappingAccessor;
 import net.minecraft.client.KeyMapping;
@@ -57,6 +59,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
                 context.client().execute(() -> setRound(context.client(), payload)));
         ClientPlayNetworking.registerGlobalReceiver(IntegrityChallengePayload.TYPE, (payload, context) ->
                 answerIntegrity(context.client(), payload));
+        RawInputCapture.screenProbe(() -> screenKind(Minecraft.getInstance()));
         ClientTickEvents.START_CLIENT_TICK.register(HoloInputRecorder::captureTick);
         // Mod list for data protection: once per connection (JOIN also fires after a transfer), only if the server declared
         // the channel. Version 2 (with file fingerprints) when the server takes it, else version 1.
@@ -157,7 +160,9 @@ public final class HoloInputRecorder implements ClientModInitializer {
         if (client.options.keyUse.isDown()) flags |= 1 << 8;
         if (p.isSprinting()) flags |= 1 << 9;
         if (p.isUsingItem()) flags |= 1 << 10;
+        int screen = screenKind(client);
         if (client.gui.screen() != null) flags |= 1 << 11;
+        if (screen == RawInputCapture.SCREEN_INVENTORY) flags |= 1 << 12;
 
         ClientPlayNetworking.send(ClientInputPayload.of(roundId, ++sequence, p.tickCount, System.currentTimeMillis(),
                 raw, turnYaw, turnPitch, flags, p.getInventory().getSelectedSlot()));
@@ -169,8 +174,15 @@ public final class HoloInputRecorder implements ClientModInitializer {
                     p.tickCount, events.baseUnixMs(), events.dropped(),
                     events.offsetMicros(), events.types(), events.a(), events.b()));
         }
-        // Capture only while a consented round runs and no screen is open, so typing is never seen.
-        RawInputCapture.arm(client.gui.screen() == null, HoloInputRecorder::isBoundKey);
+        // Capture only while a consented round runs, with no screen or the player's own inventory open (mouse only there).
+        RawInputCapture.arm(screen != RawInputCapture.SCREEN_OTHER, HoloInputRecorder::isBoundKey);
+    }
+
+    /** No screen, the player's own inventory screen (exactly that class: no creative tabs, no mod subclass), or another one. */
+    static int screenKind(Minecraft client) {
+        Screen s = client == null || client.gui == null ? null : client.gui.screen();
+        if (s == null) return RawInputCapture.SCREEN_NONE;
+        return s.getClass() == InventoryScreen.class ? RawInputCapture.SCREEN_INVENTORY : RawInputCapture.SCREEN_OTHER;
     }
 
     /** True when the key is bound to one of the player's game controls. */
