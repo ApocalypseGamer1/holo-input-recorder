@@ -296,14 +296,18 @@ public final class ReviewClient {
     static List<Chip> chips(ReviewRecord r) {
         List<Chip> out = new java.util.ArrayList<>();
         java.util.Set<Integer> grouped = new java.util.HashSet<>();
+        List<ReviewMoves.Move> rules = ReviewMoves.of(r, true);
+        java.util.Set<Integer> sprintHits = new java.util.HashSet<>();
+        for (ReviewMoves.Move m : rules) if (m.kind() == ReviewMoves.Kind.SPRINT_HIT) sprintHits.add(m.start());
         ReviewMoveModel model = ReviewMoveModel.get();
         if (model != null) {
             for (ReviewMoveModel.Hit h : model.of(r)) {
-                out.add(new Chip(h.group().name(), h.group().description(), h.group().weak(), h.hit(), h.hit()));
+                ReviewMoveModel.Group g = h.group();
+                out.add(new Chip(sprintHits.contains(h.hit()) ? g.sprintName() : g.name(), g.description(), g.weak(), h.hit(), h.hit()));
                 grouped.add(h.hit());
             }
         }
-        for (ReviewMoves.Move m : ReviewMoves.of(r, true)) {
+        for (ReviewMoves.Move m : rules) {
             ReviewMoves.Kind k = m.kind();
             if (k == ReviewMoves.Kind.STRAFE_LEFT || k == ReviewMoves.Kind.STRAFE_RIGHT) continue;
             if (k != ReviewMoves.Kind.JUMP_RESET && grouped.contains(m.start())) continue;
