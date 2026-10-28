@@ -177,9 +177,12 @@ public final class ReviewAnalysis {
             if (hits) explainHits(out, m, lo, hi);
             int runs = missRuns(lo, hi);
             if (runs > 0) out.add("You missed " + runs + (runs == 1 ? " hit" : " hits") + " you could have made");
-            explainMoves(out, lo, hi);
-            double aim = meanAimError(lo, hi);
-            if (aim > 25.0) out.add("Your aim was off the bot by " + Math.round(aim) + "\u00b0");
+            if (record.spear()) explainSpear(out, lo, hi);
+            else {
+                explainMoves(out, lo, hi);
+                double aim = meanAimError(lo, hi);
+                if (aim > 25.0) out.add("Your aim was off the bot by " + Math.round(aim) + "\u00b0");
+            }
             double from = distance(record.ticks.get(lo)), to = distance(record.ticks.get(hi));
             if (Math.abs(to - from) >= 1.5) out.add(String.format(Locale.ROOT, "Distance went from %.1f to %.1f blocks", from, to));
         }
@@ -481,6 +484,49 @@ public final class ReviewAnalysis {
         if (tooMuch && tooLittle) out.add("You jumped at the wrong times");
         else if (tooMuch) out.add("You jumped too much");
         else if (tooLittle) out.add("Swordbot would jump more here");
+    }
+
+    private List<SpearMoves.Move> spearSelf, spearOpp;
+
+    /** Spearmace moves of the reviewed player ({@code self}) or the bot, read once. */
+    List<SpearMoves.Move> spearMoves(boolean self) {
+        if (spearSelf == null) {
+            spearSelf = SpearMoves.of(record, true);
+            spearOpp = SpearMoves.of(record, false);
+        }
+        return self ? spearSelf : spearOpp;
+    }
+
+    // Spearmace: what changed the fight in the window, from both sides' moves (aim is not a cause here: launches and pearls look away).
+    private void explainSpear(List<String> out, int lo, int hi) {
+        int smashedMe = 0, mySmashes = 0, myPops = 0, botLaunches = 0, myLaunches = 0, brokeMine = 0;
+        float biggest = 0;
+        for (SpearMoves.Move m : spearMoves(false)) {
+            if (m.start() < lo || m.start() > hi) continue;
+            switch (m.kind()) {
+                case MACE_SMASH -> {
+                    smashedMe++;
+                    biggest = Math.max(biggest, m.fall());
+                }
+                case WIND_LAUNCH -> botLaunches++;
+                case SHIELD_BREAK -> brokeMine++;
+                default -> { }
+            }
+        }
+        for (SpearMoves.Move m : spearMoves(true)) {
+            if (m.start() < lo || m.start() > hi) continue;
+            switch (m.kind()) {
+                case MACE_SMASH -> mySmashes++;
+                case TOTEM_POP -> myPops++;
+                case WIND_LAUNCH -> myLaunches++;
+                default -> { }
+            }
+        }
+        if (smashedMe > 0) out.add("The bot mace-smashed you " + times(smashedMe) + String.format(Locale.ROOT, " (up to %.0f blocks)", biggest));
+        if (myPops > 0) out.add(myPops == 1 ? "You popped a totem" : "You popped " + myPops + " totems");
+        if (brokeMine > 0) out.add("The bot broke your shield");
+        if (botLaunches > 0 && myLaunches == 0) out.add("The bot launched with wind charges; you did not");
+        if (mySmashes > 0) out.add("You landed " + (mySmashes == 1 ? "a mace smash" : mySmashes + " mace smashes"));
     }
 
     /** Mean degrees between the player's look yaw and the direction to the bot; ticks on top of the bot are skipped. */

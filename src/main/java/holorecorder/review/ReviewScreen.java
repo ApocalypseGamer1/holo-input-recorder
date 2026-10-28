@@ -215,7 +215,11 @@ final class ReviewScreen extends Screen {
         int start = clipStart(a);
         // Both sides over the mark's stretch: your round against Swordbot's clip from its start.
         java.util.List<String> moves = new ArrayList<>();
-        if (m.kind() != ReviewAnalysis.Kind.BEST) {
+        if (ReviewClient.record.spear()) {
+            int end = m.end() + 1;
+            moves.add("You: " + sequence(within(ReviewClient.spearChips(ReviewClient.record, true), start, end), "no moves"));
+            moves.add("Bot: " + sequence(within(ReviewClient.spearChips(ReviewClient.record, false), start, end), "no moves"));
+        } else if (m.kind() != ReviewAnalysis.Kind.BEST) {
             // Your round cut like the clip, so the same ticks get the same move names on both lines.
             ReviewRecord sb = ReviewClient.clipAt(start);
             int len = m.end() - start + 1, cut = sb != null ? sb.ticks.size() : ReviewClient.CLIP_TICKS;
@@ -284,11 +288,15 @@ final class ReviewScreen extends Screen {
             g.text(f, p, x, y, color(k), true);
             x += f.width(p) + 8;
         }
-        if (r.coachName.isEmpty()) g.centeredText(f, "No bot data for this round: marks use the win chance only.", w / 2, y + 12, MUTED);
+        if (r.coachName.isEmpty() && !r.spear()) g.centeredText(f, "No bot data for this round: marks use the win chance only.", w / 2, y + 12, MUTED);
     }
 
     /** Your keys this moment against the bot's choice for the same moment, and the nearest mark's note. */
     private void drawKeys(GuiGraphicsExtractor g, Font f, int w, int h, ReviewRecord r, ReviewAnalysis a, int i) {
+        if (r.spear()) {
+            drawSpear(g, f, w, h, r, i);
+            return;
+        }
         int x0 = w - 132, y0 = Math.max(30, (h - 84) / 2 - 56);
         g.fill(x0 - 4, y0 - 4, w - 2, y0 + 104, PANEL);
         ReviewAnalysis.Suggestion s = a.suggestion(i);
@@ -322,6 +330,51 @@ final class ReviewScreen extends Screen {
         g.text(f, String.format("Range now %.1f", now2), x0, y0 + 81, now2 <= 3.0 ? ON : MUTED, true);
         if (clip) g.text(f, "Hits " + ReviewClient.hitsSoFar(true) + "  taken " + ReviewClient.hitsSoFar(false), x0, y0 + 92, MUTED, true);
         else g.text(f, "Your hit " + range(yours) + "  bot's " + range(bots), x0, y0 + 92, MUTED, true);
+    }
+
+    /** Spearmace: what each fighter holds and has left at this moment (no coach in this mode). */
+    private void drawSpear(GuiGraphicsExtractor g, Font f, int w, int h, ReviewRecord r, int i) {
+        int x0 = w - 132, y0 = Math.max(30, (h - 84) / 2 - 62);
+        g.fill(x0 - 4, y0 - 4, w - 2, y0 + 124, PANEL);
+        ReviewRecord.Tick t = r.ticks.get(Math.max(0, Math.min(r.ticks.size() - 1, i)));
+        int y = spearSide(g, f, x0, y0, "You", TEXT, t.self, t.selfSpear);
+        y = spearSide(g, f, x0, y + 4, f.plainSubstrByWidth(r.oppName, 124), MUTED, t.opp, t.oppSpear);
+        double now = ReviewClient.rangeNow();
+        g.text(f, String.format("Range now %.1f", now), x0, y + 4, now <= 3.0 ? ON : MUTED, true);
+    }
+
+    private static int spearSide(GuiGraphicsExtractor g, Font f, int x, int y, String who, int colour, ReviewRecord.Fighter p, ReviewRecord.Spear s) {
+        g.text(f, who + "  " + hp(p.health) + (s.absorption > 0 ? " +" + hp(s.absorption) : ""), x, y, colour, true);
+        String state = s.gliding ? "gliding" : s.use == 4 ? "shield up" : s.use != 0 ? "using " + itemName(s.use).toLowerCase(java.util.Locale.ROOT)
+                : s.fallDistance >= 1.5f ? String.format("falling %.0f", s.fallDistance) : "";
+        g.text(f, itemName(s.main) + (state.isEmpty() ? "" : ", " + state), x, y + 11, ON, true);
+        g.text(f, "Totems " + s.totems + "  Pearls " + s.pearls, x, y + 22, MUTED, true);
+        g.text(f, "Charges " + s.charges + "  Apples " + s.apples, x, y + 33, MUTED, true);
+        String buffs = (s.strength ? "Strength " : "") + (s.speed ? "Speed " : "") + (s.pearlCooldown > 0 ? "pearl wait " + Math.round(s.pearlCooldown / 2.0) / 10.0 + "s" : "");
+        g.text(f, buffs.isEmpty() ? " " : buffs.trim(), x, y + 44, MUTED, true);
+        return y + 55;
+    }
+
+    /** SpearItems kind numbers as the server records them. */
+    static String itemName(int kind) {
+        return switch (kind) {
+            case 0 -> "Empty hand";
+            case 1 -> "Sword";
+            case 2 -> "Axe";
+            case 3 -> "Mace";
+            case 4 -> "Shield";
+            case 5 -> "Wind charge";
+            case 6 -> "Pearl";
+            case 7 -> "Totem";
+            case 8 -> "Golden apple";
+            case 9 -> "Notch apple";
+            case 10 -> "Elytra";
+            case 12 -> "Spear";
+            case 13 -> "Strength potion";
+            case 14 -> "Speed potion";
+            case 24 -> "Food";
+            default -> "Other item";
+        };
     }
 
     private static String range(double v) {
@@ -428,8 +481,12 @@ final class ReviewScreen extends Screen {
         return out;
     }
 
-    /** Moves in time order, repeats in a row counted ("Crit x3"), at most 3 then "..."; "no hits" when empty. */
     private static String sequence(List<ReviewClient.Chip> moves) {
+        return sequence(moves, "no hits");
+    }
+
+    /** Moves in time order, repeats in a row counted ("Crit x3"), at most 3 then "..."; {@code none} when empty. */
+    private static String sequence(List<ReviewClient.Chip> moves, String none) {
         List<String> names = new ArrayList<>();
         List<Integer> counts = new ArrayList<>();
         for (ReviewClient.Chip m : moves) {
@@ -443,7 +500,7 @@ final class ReviewScreen extends Screen {
         List<String> parts = new ArrayList<>();
         for (int k = 0; k < Math.min(3, names.size()); k++) parts.add(counts.get(k) > 1 ? names.get(k) + " x" + counts.get(k) : names.get(k));
         if (names.size() > 3) parts.add("...");
-        return parts.isEmpty() ? "no hits" : String.join(", ", parts);
+        return parts.isEmpty() ? none : String.join(", ", parts);
     }
 
     private void drawClipControls(GuiGraphicsExtractor g, Font f, int w, int y, int n) {
@@ -505,13 +562,13 @@ final class ReviewScreen extends Screen {
             x = button(g, f, x, y, label, () -> ReviewClient.speed = s, ReviewClient.speed == s);
         }
         x += 8;
-        x = button(g, f, x, y, "Bot aim", () -> ReviewClient.coachView = !ReviewClient.coachView, ReviewClient.coachView);
+        if (!ReviewClient.record.coachName.isEmpty()) x = button(g, f, x, y, "Bot aim", () -> ReviewClient.coachView = !ReviewClient.coachView, ReviewClient.coachView);
         x = button(g, f, x, y, "Stop at marks", () -> ReviewClient.stopAtMarks = !ReviewClient.stopAtMarks, ReviewClient.stopAtMarks);
         int closeX = w - 24 - f.width("Close") - 8;
         button(g, f, closeX, y, "Close", this::onClose);
         String time = clock(ReviewClient.cursor) + " / " + clock(Math.max(0, n - 1));
         g.text(f, time, graphX1 - f.width(time), graphY0 - 25, TEXT, true);
-        String help = "Space play  ←→ step  ↑↓ marks  B bot view" + (ReviewClient.clipsAvailable() ? "  P Swordbot's play" : "");
+        String help = "Space play  ←→ step  ↑↓ marks" + (ReviewClient.record.coachName.isEmpty() ? "" : "  B bot view") + (ReviewClient.clipsAvailable() ? "  P Swordbot's play" : "");
         if (x + 16 + f.width(help) < closeX - 8) g.text(f, help, x + 16, y + 4, MUTED, true);
     }
 
@@ -626,7 +683,7 @@ final class ReviewScreen extends Screen {
             }
             case InputConstants.KEY_UP -> stepMark(1);
             case InputConstants.KEY_DOWN -> stepMark(-1);
-            case InputConstants.KEY_B -> ReviewClient.coachView = !ReviewClient.coachView;
+            case InputConstants.KEY_B -> ReviewClient.coachView = !ReviewClient.coachView && !ReviewClient.record.coachName.isEmpty();
             case InputConstants.KEY_P -> ReviewClient.requestClip(clipStart(ReviewClient.analysis));
             default -> {
                 return super.keyPressed(e);
