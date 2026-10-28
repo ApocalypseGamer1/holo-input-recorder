@@ -205,28 +205,30 @@ final class ReviewScreen extends Screen {
     private void drawCause(GuiGraphicsExtractor g, Font f, int w, int h, ReviewAnalysis a, int i) {
         ReviewAnalysis.Mark m = a.markAt(i);
         if (m == null) return;
-        String title = symbol(m.kind()) + " " + label(m.kind());
+        String title = symbol(m.kind()) + " " + label(m.kind()) + " " + clock(m.start()) + "-" + clock(m.end());
         if (m.kind() != ReviewAnalysis.Kind.MISS) {
             int hi = Math.min(a.shown.length - 1, m.to());
             if (hi >= 0) title += String.format(":  win %d%% -> %d%%", Math.round(a.shown[Math.max(0, m.from())] * 100), Math.round(a.shown[hi] * 100));
         }
         if (m.forced()) title += " (hard to avoid)";
-        java.util.List<String> lines = new ArrayList<>(a.explain(m));
         boolean clip = m.kind() != ReviewAnalysis.Kind.BEST && ReviewClient.clipsAvailable();
-        int start = clipStart(a), coachLine = -1;
+        int start = clipStart(a);
+        // Both sides over the mark's stretch: your round against Swordbot's clip from its start.
+        java.util.List<String> moves = new ArrayList<>();
         if (m.kind() != ReviewAnalysis.Kind.BEST) {
+            // Your round cut like the clip, so the same ticks get the same move names on both lines.
             ReviewRecord sb = ReviewClient.clipAt(start);
-            int len = sb != null ? sb.ticks.size() : ReviewClient.CLIP_TICKS;
-            lines.add("You: " + summary(ReviewClient.chips(ReviewClient.slice(ReviewClient.record, start, len))));
-            if (sb != null) {
-                coachLine = lines.size();
-                lines.add("Swordbot: " + summary(ReviewClient.chips(sb)));
-            } else if (clip && !ReviewClient.noClipAt(start)) {
-                coachLine = lines.size();
-                lines.add(ReviewClient.fetching(start) ? "Swordbot: playing it out..." : "Swordbot: ...");
+            int len = m.end() - start + 1, cut = sb != null ? sb.ticks.size() : ReviewClient.CLIP_TICKS;
+            moves.add("You: " + sequence(within(ReviewClient.chips(ReviewClient.slice(ReviewClient.record, start, cut)), 0, len)));
+            if (sb != null) moves.add("Swordbot: " + sequence(within(ReviewClient.chips(sb), 0, len)));
+            else if (clip && !ReviewClient.noClipAt(start)) {
+                moves.add(ReviewClient.fetching(start) ? "Swordbot: playing it out..." : "Swordbot: ...");
                 ReviewClient.prefetch(start);
             }
         }
+        java.util.List<String> lines = new ArrayList<>(a.explain(m, moves));
+        int coachLine = -1;
+        for (int k = 0; k < lines.size(); k++) if (lines.get(k).startsWith("Swordbot")) coachLine = k;
         int x0 = 46, max = w - 144 - x0;
         for (int k = 0; k < lines.size(); k++) {
             if (f.width(lines.get(k)) > max) lines.set(k, f.plainSubstrByWidth(lines.get(k), max - f.width("...")) + "...");
@@ -243,11 +245,11 @@ final class ReviewScreen extends Screen {
         if (clip) button(g, f, x0, y1 - 18, play, () -> ReviewClient.requestClip(clipStart(a)), ReviewClient.clipPending());
     }
 
-    /** Where Swordbot's play starts: the start of the mark the cursor is in, else the cursor. */
+    /** Where Swordbot's play starts: the start of the mark's stretch the cursor is in, else the cursor. */
     static int clipStart(ReviewAnalysis a) {
         int i = (int) Math.floor(ReviewClient.cursor);
         ReviewAnalysis.Mark m = a.markAt(i);
-        return m == null || m.kind() == ReviewAnalysis.Kind.BEST ? i : Math.min(m.from(), m.index());
+        return m == null || m.kind() == ReviewAnalysis.Kind.BEST ? i : m.start();
     }
 
     private void drawClipHeader(GuiGraphicsExtractor g, Font f, int w, ReviewRecord r) {
@@ -360,8 +362,9 @@ final class ReviewScreen extends Screen {
         }
         g.fill(x0, (y0 + y1) / 2, x1, (y0 + y1) / 2 + 1, 0x808A8A8A);
         for (ReviewAnalysis.Mark m : a.marks()) {
-            int mx = tickX(m.index(), n);
-            g.fill(mx, y0, mx + 1, y1, color(m.kind()) & 0x90FFFFFF);
+            int sx = tickX(m.start(), n), ex = Math.max(sx + 1, tickX(m.end(), n)), mx = (sx + ex) / 2;
+            g.fill(sx, y0, ex, y1, color(m.kind()) & 0x50FFFFFF);
+            g.fill(sx, y0, ex, y0 + 2, color(m.kind()));
             int bw = f.width(symbol(m.kind())) + 4;
             g.fill(mx - bw / 2, y0 - 12, mx - bw / 2 + bw, y0 - 2, color(m.kind()));
             g.text(f, symbol(m.kind()), mx - bw / 2 + 2, y0 - 11, 0xFF101010, false);
@@ -400,7 +403,7 @@ final class ReviewScreen extends Screen {
             {"Hits taken", String.valueOf((int) you[1]), String.valueOf((int) bot[1])},
             {"Hearts lost", String.format("%.1f", you[2]), String.format("%.1f", bot[2])},
         };
-        String youMoves = "You: " + summary(ReviewClient.movesOf(false)), botMoves = "Swordbot: " + summary(ReviewClient.movesOf(true));
+        String youMoves = "You: " + sequence(ReviewClient.movesOf(false)), botMoves = "Swordbot: " + sequence(ReviewClient.movesOf(true));
         int x0 = 46, colA = x0 + 70, colB = x0 + 110, y1 = h - 92, lines = rows.length + 3;
         int bw = Math.max(150, Math.max(f.width(youMoves), f.width(botMoves)));
         int y0 = y1 - 4 - lines * 10;
@@ -419,37 +422,66 @@ final class ReviewScreen extends Screen {
     }
 
     /** "Sprint hit + W-tap x2, Crit": the most used moves by count (3 at most). */
-    private static String summary(List<ReviewClient.Chip> moves) {
-        java.util.Map<String, Integer> count = new java.util.LinkedHashMap<>();
-        for (ReviewClient.Chip m : moves) count.merge(m.name().replace(" (not charged)", ""), 1, Integer::sum);
-        List<java.util.Map.Entry<String, Integer>> top = new ArrayList<>(count.entrySet());
-        top.sort((a, b) -> b.getValue() - a.getValue());
+    private static List<ReviewClient.Chip> within(List<ReviewClient.Chip> moves, int from, int to) {
+        List<ReviewClient.Chip> out = new ArrayList<>();
+        for (ReviewClient.Chip c : moves) if (c.start() >= from && c.start() < to) out.add(c);
+        return out;
+    }
+
+    /** Moves in time order, repeats in a row counted ("Crit x3"), at most 3 then "..."; "no hits" when empty. */
+    private static String sequence(List<ReviewClient.Chip> moves) {
+        List<String> names = new ArrayList<>();
+        List<Integer> counts = new ArrayList<>();
+        for (ReviewClient.Chip m : moves) {
+            String name = m.name().replace(" (not charged)", "");
+            if (!names.isEmpty() && names.get(names.size() - 1).equals(name)) counts.set(counts.size() - 1, counts.get(counts.size() - 1) + 1);
+            else {
+                names.add(name);
+                counts.add(1);
+            }
+        }
         List<String> parts = new ArrayList<>();
-        for (var e : top.subList(0, Math.min(3, top.size()))) parts.add(e.getValue() > 1 ? e.getKey() + " x" + e.getValue() : e.getKey());
-        if (top.size() > 3) parts.add("+" + (top.size() - 3) + " more");
-        return parts.isEmpty() ? "none" : String.join(", ", parts);
+        for (int k = 0; k < Math.min(3, names.size()); k++) parts.add(counts.get(k) > 1 ? names.get(k) + " x" + counts.get(k) : names.get(k));
+        if (names.size() > 3) parts.add("...");
+        return parts.isEmpty() ? "no hits" : String.join(", ", parts);
     }
 
     private void drawClipControls(GuiGraphicsExtractor g, Font f, int w, int y, int n) {
-        int x = graphX0;
-        x = button(g, f, x, y, "Back to your round", ReviewClient::endClip);
+        int x = graphX0, closeX = w - 24 - f.width("Close") - 8;
+        // Small screens: short labels, then no speed buttons, so nothing runs under Close.
+        String[] full = {"Back to your round", "Your play", "Swordbot's play", "Start"}, small = {"Back", "You", "Swordbot", "Start"};
+        int speedsW = 0;
+        for (double s : SPEEDS) speedsW += f.width(speedLabel(s)) + 11;
+        boolean shortLabels = x + rowWidth(f, full) + 24 + speedsW > closeX - 4;
+        String[] l = shortLabels ? small : full;
+        boolean speeds = x + rowWidth(f, l) + 24 + speedsW <= closeX - 4;
+        x = button(g, f, x, y, l[0], ReviewClient::endClip);
         x += 8;
-        x = button(g, f, x, y, "Your play", () -> ReviewClient.show(false), !ReviewClient.showingSwordbot);
-        x = button(g, f, x, y, "Swordbot's play", () -> ReviewClient.show(true), ReviewClient.showingSwordbot);
+        x = button(g, f, x, y, l[1], () -> ReviewClient.show(false), !ReviewClient.showingSwordbot);
+        x = button(g, f, x, y, l[2], () -> ReviewClient.show(true), ReviewClient.showingSwordbot);
         x += 8;
-        x = button(g, f, x, y, "Start", () -> ReviewClient.seek(0));
+        x = button(g, f, x, y, l[3], () -> ReviewClient.seek(0));
         x = button(g, f, x, y, ReviewClient.playing ? "Pause" : "Play", ReviewScreen::togglePlay);
         x += 8;
-        for (double s : SPEEDS) {
-            String label = (s == 1 ? "1" : s == 0.5 ? "0.5" : "0.25") + "x";
-            x = button(g, f, x, y, label, () -> ReviewClient.speed = s, ReviewClient.speed == s);
+        if (speeds) {
+            for (double s : SPEEDS) x = button(g, f, x, y, speedLabel(s), () -> ReviewClient.speed = s, ReviewClient.speed == s);
         }
-        int closeX = w - 24 - f.width("Close") - 8;
         button(g, f, closeX, y, "Close", this::onClose);
         String time = clock(ReviewClient.clipFrom + ReviewClient.cursor) + "   " + clock(ReviewClient.cursor) + " / " + clock(Math.max(0, n - 1));
         g.text(f, time, graphX1 - f.width(time), graphY0 - 25, TEXT, true);
         String help = "Tab switch  Esc back";
         if (x + 16 + f.width(help) < closeX - 8) g.text(f, help, x + 16, y + 4, MUTED, true);
+    }
+
+    private static String speedLabel(double s) {
+        return (s == 1 ? "1" : s == 0.5 ? "0.5" : "0.25") + "x";
+    }
+
+    /** The clip row's buttons before the speeds: the labels plus Pause. */
+    private static int rowWidth(Font f, String[] labels) {
+        int sum = f.width("Pause") + 11;
+        for (String t : labels) sum += f.width(t) + 11;
+        return sum;
     }
 
     private int tickX(double tick, int n) {
@@ -502,12 +534,12 @@ final class ReviewScreen extends Screen {
         ReviewClient.stopAt = -1;
     }
 
-    /** Replay the whole moment from a second before it, in slow motion, holding at the key tick. */
+    /** Replay the mark's whole stretch in slow motion, holding at its end. */
     private static void playMark(ReviewAnalysis.Mark m) {
-        ReviewClient.seek(Math.max(0, Math.min(m.from(), m.index()) - 20));
+        ReviewClient.seek(m.start());
         ReviewClient.speed = 0.5;
         ReviewClient.playing = true;
-        ReviewClient.stopAt = m.index();
+        ReviewClient.stopAt = m.end();
     }
 
     private static void stepMark(int dir) {
@@ -515,8 +547,8 @@ final class ReviewScreen extends Screen {
         int at = (int) Math.round(ReviewClient.cursor);
         ReviewAnalysis.Mark pick = null;
         for (ReviewAnalysis.Mark m : marks) {
-            if (dir > 0 && m.index() > at && (pick == null || m.index() < pick.index())) pick = m;
-            if (dir < 0 && m.index() < at - 2 && (pick == null || m.index() > pick.index())) pick = m;
+            if (dir > 0 && m.start() > at && (pick == null || m.start() < pick.start())) pick = m;
+            if (dir < 0 && m.start() < at - 2 && (pick == null || m.start() > pick.start())) pick = m;
         }
         if (pick != null) playMark(pick);
     }

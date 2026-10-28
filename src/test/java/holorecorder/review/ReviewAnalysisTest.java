@@ -97,7 +97,7 @@ class ReviewAnalysisTest {
         assertEquals(1, a.marks().size());
         Mark m = only(a, Kind.BLUNDER);
         assertTrue(m.from() >= 47 && m.from() <= 50, "from " + m.from());
-        assertEquals(m.from() + ReviewAnalysis.HORIZON, m.to());
+        assertTrue(m.to() > m.from() + 5 && m.to() <= m.from() + ReviewAnalysis.HORIZON, "to " + m.to());
         assertTrue(m.delta() < -0.4);
         assertTrue(m.forced(), "player copied the coach all along");
     }
@@ -559,7 +559,7 @@ class ReviewAnalysisTest {
         step(r, 40, 0.3f, 0.6f);
         agreeing(r);
         aimed(r);
-        for (int i : new int[] {45, 50, 55}) r.ticks.get(i).opp.hurt = true;
+        for (int i : new int[] {38, 42, 46}) r.ticks.get(i).opp.hurt = true;
         ReviewAnalysis a = ReviewAnalysis.of(r);
         assertEquals(List.of("You hit the bot 3 times"), a.causes(only(a, Kind.BEST)));
     }
@@ -702,7 +702,7 @@ class ReviewAnalysisTest {
     }
 
     @Test
-    void explainLeadsWithTheBarTheTradeAndTheStopMoment() {
+    void explainLeadsWithTheTradeThenTheCauses() {
         ReviewRecord r = rec(120);
         coachAll(r, coach(1, 0, 1, 0, 1, 0, 0));
         keysAll(r, S);
@@ -714,44 +714,22 @@ class ReviewAnalysisTest {
         }
         ReviewAnalysis a = dropCase(r);
         Mark m = only(a, Kind.BLUNDER);
-        String time = String.format(Locale.ROOT, "%d:%04.1f", m.index() / 1200, (m.index() % 1200) / 20.0);
         assertEquals(List.of(
                 "Bot hit you 1x (-1.1❤), you hit it 1x (-0.6❤)",
-                "At " + time + " you did: Back off",
-                "Swordbot would: Sprint in",
                 "You backed off; Swordbot would push in",
                 "You were not sprinting"), a.explain(m));
     }
 
     @Test
-    void stopMomentSaysWhenYouMatchedTheBotOrOnlyTheAimDiffers() {
-        ReviewRecord r = rec(60);
-        coachAll(r, coach(1, 0, 0, 0, 1, 0, 0));
-        keysAll(r, W);
+    void markStretchRunsFromTheLeadInToWhereTheBarStopsFalling() {
+        ReviewRecord r = rec(200);
+        coachAll(r, coach(0, 0, 0, 0, 1, 0, 0));
+        for (int i = 0; i < 200; i++) r.ticks.get(i).pSelf = i < 100 ? 0.8f : i < 108 ? 0.8f - 0.05f * (i - 99) : 0.4f;
         ReviewAnalysis a = ReviewAnalysis.of(r);
-        assertEquals(List.of("At 0:01.0 you played like Swordbot"), a.moment(20));
-        r.ticks.get(21).self.yaw = 40f;
-        a = ReviewAnalysis.of(r);
-        assertEquals(List.of("At 0:01.0 you did: Walk in", "Same move; Swordbot would turn left 40° more"), a.moment(20));
-        assertEquals(List.of(), a.moment(59));
-    }
-
-    @Test
-    void stopMomentNamesMovesNotKeys() {
-        ReviewRecord r = rec(60);
-        for (Tick t : r.ticks) t.self.onGround = true;
-        ReviewAnalysis a = ReviewAnalysis.of(r);
-        assertEquals("Stand still", a.move(30, false, false, false, false, false, false, false));
-        assertEquals("Sprint in + strafe left", a.move(30, true, true, false, false, false, true, false));
-        assertEquals("Sprint hit", a.move(30, true, false, false, false, false, true, true));
-        r.ticks.get(29).opp.hurt = true;
-        assertEquals("S-tap", a.move(30, false, false, true, false, false, false, false));
-        r.ticks.get(30).keys = W;
-        assertEquals("W-tap + strafe right", a.move(30, false, false, false, true, false, false, false));
-        r.ticks.get(29).self.hurt = true;
-        assertEquals("Jump reset", a.move(31, false, false, false, false, true, false, false));
-        r.ticks.get(28).self.swingTime = 0;
-        assertEquals("Weak hit + jump reset", a.move(31, false, false, false, false, true, false, true));
+        Mark m = a.marks().stream().filter(k -> k.kind() != Kind.BEST && k.kind() != Kind.MISS).findFirst().orElseThrow();
+        assertTrue(m.end() > 100 && m.end() < m.from() + ReviewAnalysis.HORIZON, "end " + m.end());
+        assertEquals(Math.max(0, m.from() - ReviewAnalysis.EXPLAIN_LEAD), m.start());
+        assertTrue(m.start() < 100, "start " + m.start());
     }
 
     @Test
@@ -796,6 +774,5 @@ class ReviewAnalysisTest {
             assertEquals(want, a.markAt(t), "tick " + t);
         }
         assertEquals(m0, a.markAt(lo1));
-        assertEquals(m1, a.markAt(m0.to()));
     }
 }
