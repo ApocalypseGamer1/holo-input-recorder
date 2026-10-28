@@ -10,6 +10,7 @@
     "ReviewCameraMixin",
     "ReviewRenderMixin",
     "ReviewEntityMixin",
+    "ReviewSoundMixin",
     "ReviewSkinMixin",
     "WalkAnimationAccessor",
     "ReviewSwingMixin"
