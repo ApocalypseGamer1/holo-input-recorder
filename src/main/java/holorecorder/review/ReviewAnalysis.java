@@ -1,5 +1,6 @@
 package holorecorder.review;
 
+import holorecorder.Tr;
 import holorecorder.review.ReviewRecord.Fighter;
 import holorecorder.review.ReviewRecord.Tick;
 import java.util.ArrayList;
@@ -136,11 +137,16 @@ public final class ReviewAnalysis {
             if (trade != null) out.add(trade);
         }
         out.addAll(moves);
-        for (String c : causes(m, false)) if (!c.equals(NO_CAUSE) || out.isEmpty()) out.add(c);
+        for (String c : causes(m, false)) if (!c.equals(noCause()) || out.isEmpty()) out.add(c);
         return List.copyOf(out.subList(0, Math.min(out.size(), EXPLAIN_LINES)));
     }
 
     static final String NO_CAUSE = "No clear cause: small mistakes added up";
+
+    /** {@link #NO_CAUSE} in the player's language; callers compare against this, never the English constant. */
+    static String noCause() {
+        return Tr.t("No clear cause: small mistakes added up");
+    }
 
     /** Hits and hearts both ways over the window, null when nobody was hit. */
     private String trade(int lo, int hi) {
@@ -156,8 +162,9 @@ public final class ReviewAnalysis {
             }
         }
         if (took == 0 && landed == 0) return null;
-        String bot = took == 0 ? null : "Bot hit you " + took + "x" + hearts(lost);
-        String you = landed == 0 ? null : (bot == null ? "You hit the bot " : "you hit it ") + landed + "x" + hearts(dealt);
+        String bot = took == 0 ? null : Tr.t("Bot hit you {0}x{1}", took, hearts(lost));
+        String you = landed == 0 ? null : bot == null ? Tr.t("You hit the bot {0}x{1}", landed, hearts(dealt))
+                : Tr.t("you hit it {0}x{1}", landed, hearts(dealt));
         return bot == null ? you : you == null ? bot : bot + ", " + you;
     }
 
@@ -176,17 +183,17 @@ public final class ReviewAnalysis {
         if (lo <= hi) {
             if (hits) explainHits(out, m, lo, hi);
             int runs = missRuns(lo, hi);
-            if (runs > 0) out.add("You missed " + runs + (runs == 1 ? " hit" : " hits") + " you could have made");
+            if (runs > 0) out.add(runs == 1 ? Tr.t("You missed {0} hit you could have made", runs) : Tr.t("You missed {0} hits you could have made", runs));
             if (record.spear()) explainSpear(out, lo, hi);
             else {
                 explainMoves(out, lo, hi);
                 double aim = meanAimError(lo, hi);
-                if (aim > 25.0) out.add("Your aim was off the bot by " + Math.round(aim) + "\u00b0");
+                if (aim > 25.0) out.add(Tr.t("Your aim was off the bot by {0}\u00b0", Math.round(aim)));
             }
             double from = distance(record.ticks.get(lo)), to = distance(record.ticks.get(hi));
-            if (Math.abs(to - from) >= 1.5) out.add(String.format(Locale.ROOT, "Distance went from %.1f to %.1f blocks", from, to));
+            if (Math.abs(to - from) >= 1.5) out.add(Tr.t("Distance went from {0} to {1} blocks", String.format(Locale.ROOT, "%.1f", from), String.format(Locale.ROOT, "%.1f", to)));
         }
-        if (out.isEmpty()) out.add(NO_CAUSE);
+        if (out.isEmpty()) out.add(noCause());
         return out;
     }
 
@@ -419,7 +426,7 @@ public final class ReviewAnalysis {
     }
 
     private static String times(int k) {
-        return k + (k == 1 ? " time" : " times");
+        return k == 1 ? Tr.t("{0} time", k) : Tr.t("{0} times", k);
     }
 
     // Bot hits go first unless the player won the trade on a BEST mark.
@@ -432,9 +439,10 @@ public final class ReviewAnalysis {
             if (t.opp.hurt) landed++;
             if (i > 0) lost += Math.max(0, record.ticks.get(i - 1).self.health - t.self.health);
         }
-        String bot = took == 0 ? null : "The bot hit you " + times(took)
-                + (lost > 0 ? String.format(Locale.ROOT, " (-%.1f hearts)", lost / 2.0) : "");
-        String you = landed == 0 ? null : "You hit the bot " + times(landed);
+        String bot = took == 0 ? null : lost > 0
+                ? Tr.t("The bot hit you {0} (-{1} hearts)", times(took), String.format(Locale.ROOT, "%.1f", lost / 2.0))
+                : Tr.t("The bot hit you {0}", times(took));
+        String you = landed == 0 ? null : Tr.t("You hit the bot {0}", times(landed));
         boolean botFirst = took > 0 && (landed == 0 || m.kind() != Kind.BEST);
         if (botFirst && bot != null) out.add(bot);
         if (you != null) out.add(you);
@@ -477,13 +485,13 @@ public final class ReviewAnalysis {
             }
         }
         if (c == 0) return;
-        if (back >= 0.4 * c) out.add("You backed off; Swordbot would push in");
-        else if (noW >= 0.4 * c) out.add("You stopped moving in");
-        if (wantSprint > 0 && noSprint >= 0.5 * wantSprint) out.add("You were not sprinting");
+        if (back >= 0.4 * c) out.add(Tr.t("You backed off; Swordbot would push in"));
+        else if (noW >= 0.4 * c) out.add(Tr.t("You stopped moving in"));
+        if (wantSprint > 0 && noSprint >= 0.5 * wantSprint) out.add(Tr.t("You were not sprinting"));
         boolean tooMuch = coachNoJump > 0 && jumped >= 0.3 * coachNoJump, tooLittle = missedJump >= 0.5 * c;
-        if (tooMuch && tooLittle) out.add("You jumped at the wrong times");
-        else if (tooMuch) out.add("You jumped too much");
-        else if (tooLittle) out.add("Swordbot would jump more here");
+        if (tooMuch && tooLittle) out.add(Tr.t("You jumped at the wrong times"));
+        else if (tooMuch) out.add(Tr.t("You jumped too much"));
+        else if (tooLittle) out.add(Tr.t("Swordbot would jump more here"));
     }
 
     private List<SpearMoves.Move> spearSelf, spearOpp;
@@ -522,11 +530,11 @@ public final class ReviewAnalysis {
                 default -> { }
             }
         }
-        if (smashedMe > 0) out.add("Bot mace-smashed you " + smashedMe + "x" + String.format(Locale.ROOT, " (%.0f blocks)", biggest));
-        if (myPops > 0) out.add(myPops == 1 ? "You popped a totem" : "You popped " + myPops + " totems");
-        if (brokeMine > 0) out.add("The bot broke your shield");
-        if (botLaunches > 0 && myLaunches == 0) out.add("Bot wind-launched; you did not");
-        if (mySmashes > 0) out.add("You landed " + (mySmashes == 1 ? "a mace smash" : mySmashes + " mace smashes"));
+        if (smashedMe > 0) out.add(Tr.t("Bot mace-smashed you {0}x ({1} blocks)", smashedMe, String.format(Locale.ROOT, "%.0f", biggest)));
+        if (myPops > 0) out.add(myPops == 1 ? Tr.t("You popped a totem") : Tr.t("You popped {0} totems", myPops));
+        if (brokeMine > 0) out.add(Tr.t("The bot broke your shield"));
+        if (botLaunches > 0 && myLaunches == 0) out.add(Tr.t("Bot wind-launched; you did not"));
+        if (mySmashes > 0) out.add(mySmashes == 1 ? Tr.t("You landed a mace smash") : Tr.t("You landed {0} mace smashes", mySmashes));
     }
 
     /** Mean degrees between the player's look yaw and the direction to the bot; ticks on top of the bot are skipped. */

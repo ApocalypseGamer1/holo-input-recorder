@@ -1,6 +1,7 @@
 package holorecorder.review;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import holorecorder.Tr;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -29,7 +30,7 @@ final class ReviewScreen extends Screen {
     private boolean scrubbing;
 
     ReviewScreen() {
-        super(Component.literal("Round review"));
+        super(Component.literal(Tr.t("Round review")));
     }
 
     @Override
@@ -68,11 +69,11 @@ final class ReviewScreen extends Screen {
 
     static String label(ReviewAnalysis.Kind k) {
         return switch (k) {
-            case BLUNDER -> "Blunder";
-            case MISTAKE -> "Mistake";
-            case INACCURACY -> "Inaccuracy";
-            case BEST -> "Best";
-            case MISS -> "Miss";
+            case BLUNDER -> Tr.t("Blunder");
+            case MISTAKE -> Tr.t("Mistake");
+            case INACCURACY -> Tr.t("Inaccuracy");
+            case BEST -> Tr.t("Best");
+            case MISS -> Tr.t("Miss");
         };
     }
 
@@ -132,7 +133,7 @@ final class ReviewScreen extends Screen {
         String pct = Math.round(pSelf * 100) + "%";
         g.text(f, pct, x1 + 3, pSelf >= 0.5f ? y0 + barH - f.lineHeight : y0, TEXT, true);
         g.text(f, f.plainSubstrByWidth(r.oppName, 60), x0, y0 - 2 - f.lineHeight, MUTED, true);
-        g.text(f, "You", x0, y0 + barH + 3, TEXT, true);
+        g.text(f, Tr.t("You"), x0, y0 + barH + 3, TEXT, true);
     }
 
     /** Where the bot would aim: a ring at that direction, an X when it would click; the crosshair is where you aimed. */
@@ -186,7 +187,7 @@ final class ReviewScreen extends Screen {
             g.fill(w - e - 3, e + 3, w - e, h - e - 3, a);
         }
         float hearts = ReviewClient.lastHitHearts();
-        String text = (ReviewClient.inClip() && ReviewClient.showingSwordbot ? "Bot hit " + ReviewClient.botName() : "Bot hit you") + (hearts > 0 ? String.format("  -%.1f\u2764", hearts) : "");
+        String text = (ReviewClient.inClip() && ReviewClient.showingSwordbot ? Tr.t("Bot hit {0}", ReviewClient.botName()) : Tr.t("Bot hit you")) + (hearts > 0 ? String.format("  -%.1f\u2764", hearts) : "");
         g.centeredText(f, text, w / 2, h / 2 - 22, (int) Math.round(255 * k) << 24 | 0xFF5050);
     }
 
@@ -195,7 +196,7 @@ final class ReviewScreen extends Screen {
         double since = ReviewClient.sinceDodged();
         if (since >= 2 * GOT_HIT_TICKS) return;
         double k = Math.min(1, 2 - since / GOT_HIT_TICKS);
-        String text = ReviewClient.botName() + " dodged a hit you took";
+        String text = Tr.t("{0} dodged a hit you took", ReviewClient.botName());
         int tw = f.width(text), cx = (w - 136) / 2;   // left of the key panel
         g.fill(cx - tw / 2 - 3, 26, cx + tw / 2 + 3, 38, (int) Math.round(0xB0 * k) << 24);
         g.centeredText(f, text, cx, 28, (int) Math.round(255 * k) << 24 | 0x9BE060);
@@ -208,31 +209,31 @@ final class ReviewScreen extends Screen {
         String title = symbol(m.kind()) + " " + label(m.kind()) + " " + clock(m.start()) + "-" + clock(m.end());
         if (m.kind() != ReviewAnalysis.Kind.MISS) {
             int hi = Math.min(a.shown.length - 1, m.to());
-            if (hi >= 0) title += String.format(":  win %d%% -> %d%%", Math.round(a.shown[Math.max(0, m.from())] * 100), Math.round(a.shown[hi] * 100));
+            if (hi >= 0) title += Tr.t(":  win {0}% -> {1}%", Math.round(a.shown[Math.max(0, m.from())] * 100), Math.round(a.shown[hi] * 100));
         }
-        if (m.forced()) title += " (hard to avoid)";
+        if (m.forced()) title += Tr.t(" (hard to avoid)");
         boolean clip = m.kind() != ReviewAnalysis.Kind.BEST && ReviewClient.clipsAvailable();
         int start = clipStart(a);
         // Both sides over the mark's stretch: your round against Swordbot's clip from its start.
         java.util.List<String> moves = new ArrayList<>();
         boolean spear = ReviewClient.record.spear();
         // Spearmace: the round's bot is the Spearmace bot too, so its clip line says whose seat it plays.
-        String coachTag = spear ? "In your place" : ReviewClient.botName();
+        String coachTag = spear ? Tr.t("In your place") : ReviewClient.botName();
         ReviewRecord sb = ReviewClient.clipAt(start);
         int len = m.end() - start + 1;
         if (spear) {
             int end = m.end() + 1;
-            moves.add("You: " + sequence(within(ReviewClient.spearChips(ReviewClient.record, true), start, end), "no moves"));
-            moves.add("Bot: " + sequence(within(ReviewClient.spearChips(ReviewClient.record, false), start, end), "no moves"));
+            moves.add(Tr.t("You: {0}", sequence(within(ReviewClient.spearChips(ReviewClient.record, true), start, end), Tr.t("no moves"))));
+            moves.add("Bot: " + sequence(within(ReviewClient.spearChips(ReviewClient.record, false), start, end), Tr.t("no moves")));
         } else if (m.kind() != ReviewAnalysis.Kind.BEST) {
             // Your round cut like the clip, so the same ticks get the same move names on both lines.
             int cut = sb != null ? sb.ticks.size() : ReviewClient.CLIP_TICKS;
-            moves.add("You: " + sequence(within(ReviewClient.chips(ReviewClient.slice(ReviewClient.record, start, cut)), 0, len)));
+            moves.add(Tr.t("You: {0}", sequence(within(ReviewClient.chips(ReviewClient.slice(ReviewClient.record, start, cut)), 0, len))));
         }
         if (m.kind() != ReviewAnalysis.Kind.BEST) {
-            if (sb != null) moves.add(coachTag + ": " + sequence(within(ReviewClient.chips(sb), 0, len), spear ? "no moves" : "no hits"));
+            if (sb != null) moves.add(coachTag + ": " + sequence(within(ReviewClient.chips(sb), 0, len), spear ? Tr.t("no moves") : Tr.t("no hits")));
             else if (clip && !ReviewClient.noClipAt(start)) {
-                moves.add(ReviewClient.fetching(start) ? coachTag + ": playing it out..." : coachTag + ": ...");
+                moves.add(ReviewClient.fetching(start) ? Tr.t("{0}: playing it out...", coachTag) : coachTag + ": ...");
                 ReviewClient.prefetch(start);
             }
         }
@@ -245,7 +246,7 @@ final class ReviewScreen extends Screen {
         }
         int bw = f.width(title);
         for (String l : lines) bw = Math.max(bw, f.width(l));
-        String play = ReviewClient.clipPending() ? ReviewClient.botName() + " is playing..." : "\u25B6 " + ReviewClient.botName() + "'s play from here";
+        String play = ReviewClient.clipPending() ? Tr.t("{0} is playing...", ReviewClient.botName()) : "\u25B6 " + Tr.t("{0}'s play from here", ReviewClient.botName());
         if (clip) bw = Math.max(bw, f.width(play) + 8);
         int y1 = h - 92, y0 = y1 - 14 - lines.size() * 10 - (clip ? 18 : 0);
         g.fill(x0 - 4, y0 - 4, x0 + bw + 4, y1, PANEL);
@@ -263,9 +264,9 @@ final class ReviewScreen extends Screen {
     }
 
     private void drawClipHeader(GuiGraphicsExtractor g, Font f, int w, ReviewRecord r) {
-        String title = (ReviewClient.showingSwordbot ? "2/2  " + ReviewClient.botName() + "'s play" : "1/2  Your play") + " from " + clock(ReviewClient.clipFrom);
-        String sub = ReviewClient.showingSwordbot ? (r.spear() ? "The bot plays in your place and fights itself back live." : ReviewClient.botName() + " plays in your place. " + r.oppName + " fights back live.")
-                : "What you did. Next: " + ReviewClient.botName() + " from the same moment.";
+        String title = ReviewClient.showingSwordbot ? Tr.t("2/2  {0}'s play from {1}", ReviewClient.botName(), clock(ReviewClient.clipFrom)) : Tr.t("1/2  Your play from {0}", clock(ReviewClient.clipFrom));
+        String sub = ReviewClient.showingSwordbot ? (r.spear() ? Tr.t("The bot plays in your place and fights itself back live.") : Tr.t("{0} plays in your place. {1} fights back live.", ReviewClient.botName(), r.oppName))
+                : Tr.t("What you did. Next: {0} from the same moment.", ReviewClient.botName());
         int tw = Math.max(f.width(title), f.width(sub));
         g.fill(w / 2 - tw / 2 - 4, 2, w / 2 + tw / 2 + 4, 14 + f.lineHeight, PANEL);
         g.centeredText(f, title, w / 2, 4, ReviewClient.showingSwordbot ? COACH : TEXT);
@@ -274,14 +275,14 @@ final class ReviewScreen extends Screen {
 
     private void drawHeader(GuiGraphicsExtractor g, Font f, int w, ReviewRecord r, ReviewAnalysis a) {
         String result = switch (r.outcome) {
-            case ReviewRecord.OUTCOME_WIN -> "Win";
-            case ReviewRecord.OUTCOME_LOSS -> "Loss";
-            case ReviewRecord.OUTCOME_DRAW -> "Draw";
-            default -> "Unfinished";
+            case ReviewRecord.OUTCOME_WIN -> Tr.t("Win");
+            case ReviewRecord.OUTCOME_LOSS -> Tr.t("Loss");
+            case ReviewRecord.OUTCOME_DRAW -> Tr.t("Draw");
+            default -> Tr.t("Unfinished");
         };
-        String title = "Round review: " + result + " vs " + r.oppName;
+        String title = Tr.t("Round review: {0} vs {1}", result, r.oppName);
         double acc = a.accuracy();
-        if (!Double.isNaN(acc)) title += "   Accuracy " + Math.round(acc) + "%";
+        if (!Double.isNaN(acc)) title += "   " + Tr.t("Accuracy {0}%", Math.round(acc));
         int tw = f.width(title);
         g.fill(w / 2 - tw / 2 - 4, 2, w / 2 + tw / 2 + 4, 14 + f.lineHeight, PANEL);
         g.centeredText(f, title, w / 2, 4, TEXT);
@@ -294,7 +295,7 @@ final class ReviewScreen extends Screen {
             g.text(f, p, x, y, color(k), true);
             x += f.width(p) + 8;
         }
-        if (r.coachName.isEmpty() && !r.spear()) g.centeredText(f, "No bot data for this round: marks use the win chance only.", w / 2, y + 12, MUTED);
+        if (r.coachName.isEmpty() && !r.spear()) g.centeredText(f, Tr.t("No bot data for this round: marks use the win chance only."), w / 2, y + 12, MUTED);
     }
 
     /** Your keys this moment against the bot's choice for the same moment, and the nearest mark's note. */
@@ -303,7 +304,7 @@ final class ReviewScreen extends Screen {
             drawSpear(g, f, w, h, r, i);
             return;
         }
-        int x0 = w - 132, y0 = Math.max(30, (h - 84) / 2 - 56);
+        int x0 = w - 2 - Math.max(130, keyRowWidth(f)), y0 = Math.max(30, (h - 84) / 2 - 56);
         g.fill(x0 - 4, y0 - 4, w - 2, y0 + 104, PANEL);
         ReviewAnalysis.Suggestion s = a.suggestion(i);
         int next = Math.min(r.ticks.size() - 1, i + 1);
@@ -313,29 +314,29 @@ final class ReviewScreen extends Screen {
         boolean left = (k & 4) != 0 && (k & 8) == 0, right = (k & 8) != 0 && (k & 4) == 0;
         boolean clip = ReviewClient.inClip();
         boolean bot = clip && ReviewClient.showingSwordbot;
-        g.text(f, bot ? ReviewClient.botName() + " pressed" : clip ? "You pressed" : "You", x0, y0, bot ? COACH : TEXT, true);
+        g.text(f, bot ? Tr.t("{0} pressed", ReviewClient.botName()) : clip ? Tr.t("You pressed") : Tr.t("You"), x0, y0, bot ? COACH : TEXT, true);
         boolean[] youKeys = {fwd, left, back, right, (k & 16) != 0, (k & 64) != 0, r.swingStart(next, true)};
         keyRow(g, f, x0, y0 + 11, youKeys, null, bot ? COACH : ON);
         if (clip) {
             g.text(f, f.plainSubstrByWidth(r.oppName, 124), x0, y0 + 30, MUTED, true);
-            g.text(f, bot ? "fights back live" : "as in your round", x0, y0 + 41, MUTED, true);
+            g.text(f, bot ? Tr.t("fights back live") : Tr.t("as in your round"), x0, y0 + 41, MUTED, true);
         } else if (s == null) {
-            g.text(f, ReviewClient.botName() + " would", x0, y0 + 30, COACH, true);
-            g.text(f, "no data here", x0, y0 + 41, MUTED, true);
+            g.text(f, Tr.t("{0} would", ReviewClient.botName()), x0, y0 + 30, COACH, true);
+            g.text(f, Tr.t("no data here"), x0, y0 + 41, MUTED, true);
         } else {
-            g.text(f, ReviewClient.botName() + " would", x0, y0 + 30, COACH, true);
+            g.text(f, Tr.t("{0} would", ReviewClient.botName()), x0, y0 + 30, COACH, true);
             boolean[] bots = {s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5};
             keyRow(g, f, x0, y0 + 41, bots, youKeys, COACH);
             String turn = turnText(s.yawDeg(), s.pitchDeg());
-            g.text(f, "click " + Math.round(s.attackP() * 100) + "%  " + turn, x0, y0 + 58, MUTED, true);
+            g.text(f, Tr.t("click {0}%  {1}", Math.round(s.attackP() * 100), turn), x0, y0 + 58, MUTED, true);
         }
         ReviewRecord.Tick now = r.ticks.get(Math.max(0, i));
-        if (clip) g.text(f, (bot ? ReviewClient.botName() + " HP " : "Your HP ") + hp(now.self.health), x0, y0 + 70, MUTED, true);
-        else g.text(f, "HP you " + hp(now.self.health) + "  bot " + hp(now.opp.health), x0, y0 + 70, MUTED, true);
+        if (clip) g.text(f, bot ? Tr.t("{0} HP {1}", ReviewClient.botName(), hp(now.self.health)) : Tr.t("Your HP {0}", hp(now.self.health)), x0, y0 + 70, MUTED, true);
+        else g.text(f, Tr.t("HP you {0}  bot {1}", hp(now.self.health), hp(now.opp.health)), x0, y0 + 70, MUTED, true);
         double now2 = ReviewClient.rangeNow(), yours = ReviewClient.rangeAtYourHit(), bots = ReviewClient.rangeAtBotHit();
-        g.text(f, String.format("Range now %.1f", now2), x0, y0 + 81, now2 <= 3.0 ? ON : MUTED, true);
-        if (clip) g.text(f, "Hits " + ReviewClient.hitsSoFar(true) + "  taken " + ReviewClient.hitsSoFar(false), x0, y0 + 92, MUTED, true);
-        else g.text(f, "Your hit " + range(yours) + "  bot's " + range(bots), x0, y0 + 92, MUTED, true);
+        g.text(f, Tr.t("Range now {0}", String.format("%.1f", now2)), x0, y0 + 81, now2 <= 3.0 ? ON : MUTED, true);
+        if (clip) g.text(f, Tr.t("Hits {0}  taken {1}", ReviewClient.hitsSoFar(true), ReviewClient.hitsSoFar(false)), x0, y0 + 92, MUTED, true);
+        else g.text(f, Tr.t("Your hit {0}  bot's {1}", range(yours), range(bots)), x0, y0 + 92, MUTED, true);
     }
 
     /** Spearmace: what each fighter holds and has left at this moment (no coach in this mode). */
@@ -343,20 +344,20 @@ final class ReviewScreen extends Screen {
         int x0 = w - 132, y0 = Math.max(30, (h - 84) / 2 - 62);
         g.fill(x0 - 4, y0 - 4, w - 2, y0 + 124, PANEL);
         ReviewRecord.Tick t = r.ticks.get(Math.max(0, Math.min(r.ticks.size() - 1, i)));
-        int y = spearSide(g, f, x0, y0, "You", TEXT, t.self, t.selfSpear);
+        int y = spearSide(g, f, x0, y0, Tr.t("You"), TEXT, t.self, t.selfSpear);
         y = spearSide(g, f, x0, y + 4, f.plainSubstrByWidth(r.oppName, 124), MUTED, t.opp, t.oppSpear);
         double now = ReviewClient.rangeNow();
-        g.text(f, String.format("Range now %.1f", now), x0, y + 4, now <= 3.0 ? ON : MUTED, true);
+        g.text(f, Tr.t("Range now {0}", String.format("%.1f", now)), x0, y + 4, now <= 3.0 ? ON : MUTED, true);
     }
 
     private static int spearSide(GuiGraphicsExtractor g, Font f, int x, int y, String who, int colour, ReviewRecord.Fighter p, ReviewRecord.Spear s) {
         g.text(f, who + "  " + hp(p.health) + (s.absorption > 0 ? " +" + hp(s.absorption) : ""), x, y, colour, true);
-        String state = s.gliding ? "gliding" : s.use == 4 ? "shield up" : s.use != 0 ? "using " + itemName(s.use).toLowerCase(java.util.Locale.ROOT)
-                : s.fallDistance >= 1.5f ? String.format("falling %.0f", s.fallDistance) : "";
+        String state = s.gliding ? Tr.t("gliding") : s.use == 4 ? Tr.t("shield up") : s.use != 0 ? Tr.t("using {0}", itemName(s.use).toLowerCase(java.util.Locale.ROOT))
+                : s.fallDistance >= 1.5f ? Tr.t("falling {0}", String.format("%.0f", s.fallDistance)) : "";
         g.text(f, itemName(s.main) + (state.isEmpty() ? "" : ", " + state), x, y + 11, ON, true);
-        g.text(f, "Totems " + s.totems + "  Pearls " + s.pearls, x, y + 22, MUTED, true);
-        g.text(f, "Charges " + s.charges + "  Apples " + s.apples, x, y + 33, MUTED, true);
-        String buffs = (s.strength ? "Strength " : "") + (s.speed ? "Speed " : "") + (s.pearlCooldown > 0 ? "pearl wait " + Math.round(s.pearlCooldown / 2.0) / 10.0 + "s" : "");
+        g.text(f, Tr.t("Totems {0}  Pearls {1}", s.totems, s.pearls), x, y + 22, MUTED, true);
+        g.text(f, Tr.t("Charges {0}  Apples {1}", s.charges, s.apples), x, y + 33, MUTED, true);
+        String buffs = (s.strength ? Tr.t("Strength") + " " : "") + (s.speed ? Tr.t("Speed") + " " : "") + (s.pearlCooldown > 0 ? Tr.t("pearl wait {0}s", Math.round(s.pearlCooldown / 2.0) / 10.0) : "");
         g.text(f, buffs.isEmpty() ? " " : buffs.trim(), x, y + 44, MUTED, true);
         return y + 55;
     }
@@ -364,22 +365,22 @@ final class ReviewScreen extends Screen {
     /** SpearItems kind numbers as the server records them. */
     static String itemName(int kind) {
         return switch (kind) {
-            case 0 -> "Empty hand";
-            case 1 -> "Sword";
-            case 2 -> "Axe";
-            case 3 -> "Mace";
-            case 4 -> "Shield";
-            case 5 -> "Wind charge";
-            case 6 -> "Pearl";
-            case 7 -> "Totem";
-            case 8 -> "Golden apple";
-            case 9 -> "Notch apple";
-            case 10 -> "Elytra";
-            case 12 -> "Spear";
-            case 13 -> "Strength potion";
-            case 14 -> "Speed potion";
-            case 24 -> "Food";
-            default -> "Other item";
+            case 0 -> Tr.t("Empty hand");
+            case 1 -> Tr.t("Sword");
+            case 2 -> Tr.t("Axe");
+            case 3 -> Tr.t("Mace");
+            case 4 -> Tr.t("Shield");
+            case 5 -> Tr.t("Wind charge");
+            case 6 -> Tr.t("Pearl");
+            case 7 -> Tr.t("Totem");
+            case 8 -> Tr.t("Golden apple");
+            case 9 -> Tr.t("Notch apple");
+            case 10 -> Tr.t("Elytra");
+            case 12 -> Tr.t("Spear");
+            case 13 -> Tr.t("Strength potion");
+            case 14 -> Tr.t("Speed potion");
+            case 24 -> Tr.t("Food");
+            default -> Tr.t("Other item");
         };
     }
 
@@ -392,14 +393,25 @@ final class ReviewScreen extends Screen {
     }
 
     private static String turnText(double yaw, double pitch) {
-        String t = Math.abs(yaw) < 1 ? "" : (yaw > 0 ? "turn right " : "turn left ") + Math.round(Math.abs(yaw)) + "°";
-        if (Math.abs(pitch) >= 1) t += (t.isEmpty() ? "" : ", ") + (pitch > 0 ? "down " : "up ") + Math.round(Math.abs(pitch)) + "°";
-        return t.isEmpty() ? "hold aim" : t;
+        String t = Math.abs(yaw) < 1 ? "" : yaw > 0 ? Tr.t("turn right {0}°", Math.round(Math.abs(yaw))) : Tr.t("turn left {0}°", Math.round(Math.abs(yaw)));
+        if (Math.abs(pitch) >= 1) t += (t.isEmpty() ? "" : ", ") + (pitch > 0 ? Tr.t("down {0}°", Math.round(Math.abs(pitch))) : Tr.t("up {0}°", Math.round(Math.abs(pitch))));
+        return t.isEmpty() ? Tr.t("hold aim") : t;
+    }
+
+    private static String[] keyNames() {
+        return new String[] {"W", "A", "S", "D", Tr.t("Jump"), Tr.t("Run"), Tr.t("Hit")};
+    }
+
+    /** The key row is as wide as its labels need (Spanish ones are longer); the panel grows to fit it. */
+    private static int keyRowWidth(Font f) {
+        int w = -2;
+        for (String n : keyNames()) w += f.width(n) + 7;
+        return w;
     }
 
     /** One key row; where {@code other} is given, keys that differ from it get a yellow frame. */
     private static void keyRow(GuiGraphicsExtractor g, Font f, int x, int y, boolean[] lit, boolean[] other, int on) {
-        String[] names = {"W", "A", "S", "D", "Jump", "Run", "Hit"};
+        String[] names = keyNames();
         for (int i = 0; i < names.length; i++) {
             int bw = f.width(names[i]) + 5;
             g.fill(x, y, x + bw, y + 13, lit[i] ? on : OFF);
@@ -447,7 +459,7 @@ final class ReviewScreen extends Screen {
     private void drawMoveNow(GuiGraphicsExtractor g, Font f, int w, int h, boolean bot) {
         ReviewClient.Chip m = ReviewClient.moveNow();
         if (m == null) return;
-        String text = (bot ? ReviewClient.botName() + ": " : "You: ") + m.name();
+        String text = bot ? ReviewClient.botName() + ": " + m.name() : Tr.t("You: {0}", m.name());
         int tw = Math.max(f.width(text), f.width(m.detail())), y = ReviewClient.inClip() ? h - 88 : h / 2 + 12, y1 = m.detail().isEmpty() ? y + 10 : y + 20;
         g.fill(w / 2 - tw / 2 - 3, y - 2, w / 2 + tw / 2 + 3, y1, PANEL);
         g.centeredText(f, text, w / 2, y, m.weak() ? 0xFFF7C631 : bot ? COACH : ON);
@@ -458,17 +470,24 @@ final class ReviewScreen extends Screen {
     private void drawCompare(GuiGraphicsExtractor g, Font f, int h) {
         double[] you = ReviewClient.tally(false), bot = ReviewClient.tally(true);
         String[][] rows = {
-            {"Hits landed", String.valueOf((int) you[0]), String.valueOf((int) bot[0])},
-            {"Hits taken", String.valueOf((int) you[1]), String.valueOf((int) bot[1])},
-            {"Hearts lost", String.format("%.1f", you[2]), String.format("%.1f", bot[2])},
+            {Tr.t("Hits landed"), String.valueOf((int) you[0]), String.valueOf((int) bot[0])},
+            {Tr.t("Hits taken"), String.valueOf((int) you[1]), String.valueOf((int) bot[1])},
+            {Tr.t("Hearts lost"), String.format("%.1f", you[2]), String.format("%.1f", bot[2])},
         };
-        String youMoves = "You: " + sequence(ReviewClient.movesOf(false)), botMoves = ReviewClient.botName() + ": " + sequence(ReviewClient.movesOf(true));
-        int x0 = 46, colA = x0 + 70, colB = x0 + 110, y1 = h - 92, lines = rows.length + 3;
-        int bw = Math.max(150, Math.max(f.width(youMoves), f.width(botMoves)));
+        String youMoves = Tr.t("You: {0}", sequence(ReviewClient.movesOf(false))), botMoves = ReviewClient.botName() + ": " + sequence(ReviewClient.movesOf(true));
+        int label = f.width(Tr.t("Same moment"));
+        for (String[] r : rows) label = Math.max(label, f.width(r[0]));
+        int x0 = 46, colA = x0 + Math.max(70, label + 6), colB = colA + 40, y1 = h - 92, lines = rows.length + 3;
+        // Stops short of the right-hand key panel; longer move lines end in "...".
+        int room = width - 2 - Math.max(130, keyRowWidth(f)) - 12 - x0;
+        int bw = Math.min(Math.max(colB - x0 + f.width(ReviewClient.botName()), Math.max(f.width(youMoves), f.width(botMoves))), room);
+        bw = Math.max(bw, Math.min(150, room));
+        youMoves = fit(f, youMoves, bw);
+        botMoves = fit(f, botMoves, bw);
         int y0 = y1 - 4 - lines * 10;
         g.fill(x0 - 4, y0 - 4, x0 + bw + 4, y1, PANEL);
-        g.text(f, "Same moment", x0, y0, MUTED, true);
-        g.text(f, "You", colA, y0, ReviewClient.showingSwordbot ? MUTED : TEXT, true);
+        g.text(f, Tr.t("Same moment"), x0, y0, MUTED, true);
+        g.text(f, Tr.t("You"), colA, y0, ReviewClient.showingSwordbot ? MUTED : TEXT, true);
         g.text(f, ReviewClient.botName(), colB, y0, ReviewClient.showingSwordbot ? COACH : MUTED, true);
         for (int k = 0; k < rows.length; k++) {
             int y = y0 + 11 + k * 10;
@@ -480,6 +499,10 @@ final class ReviewScreen extends Screen {
         g.text(f, botMoves, x0, y0 + 23 + rows.length * 10, COACH, true);
     }
 
+    private static String fit(Font f, String text, int width) {
+        return f.width(text) <= width ? text : f.plainSubstrByWidth(text, width - f.width("...")) + "...";
+    }
+
     /** "Sprint hit + W-tap x2, Crit": the most used moves by count (3 at most). */
     private static List<ReviewClient.Chip> within(List<ReviewClient.Chip> moves, int from, int to) {
         List<ReviewClient.Chip> out = new ArrayList<>();
@@ -488,7 +511,7 @@ final class ReviewScreen extends Screen {
     }
 
     private static String sequence(List<ReviewClient.Chip> moves) {
-        return sequence(moves, "no hits");
+        return sequence(moves, Tr.t("no hits"));
     }
 
     /** Moves in time order, repeats in a row counted ("Crit x3"), at most 3 then "..."; {@code none} when empty. */
@@ -496,7 +519,7 @@ final class ReviewScreen extends Screen {
         List<String> names = new ArrayList<>();
         List<Integer> counts = new ArrayList<>();
         for (ReviewClient.Chip m : moves) {
-            String name = m.name().replace(" (not charged)", "");
+            String name = m.name().replaceAll("\\s*\\([^)]*\\)$", "");
             if (!names.isEmpty() && names.get(names.size() - 1).equals(name)) counts.set(counts.size() - 1, counts.get(counts.size() - 1) + 1);
             else {
                 names.add(name);
@@ -510,9 +533,9 @@ final class ReviewScreen extends Screen {
     }
 
     private void drawClipControls(GuiGraphicsExtractor g, Font f, int w, int y, int n) {
-        int x = graphX0, closeX = w - 24 - f.width("Close") - 8;
+        int x = graphX0, closeX = w - 24 - f.width(Tr.t("Close")) - 8;
         // Small screens: short labels, then no speed buttons, so nothing runs under Close.
-        String[] full = {"Back to your round", "Your play", ReviewClient.botName() + "'s play", "Start"}, small = {"Back", "You", ReviewClient.record.spear() ? "Bot" : "Swordbot", "Start"};
+        String[] full = {Tr.t("Back to your round"), Tr.t("Your play"), Tr.t("{0}'s play", ReviewClient.botName()), Tr.t("Start")}, small = {Tr.t("Back"), Tr.t("You"), ReviewClient.record.spear() ? "Bot" : "Swordbot", Tr.t("Start")};
         int speedsW = 0;
         for (double s : SPEEDS) speedsW += f.width(speedLabel(s)) + 11;
         boolean shortLabels = x + rowWidth(f, full) + 24 + speedsW > closeX - 4;
@@ -524,15 +547,15 @@ final class ReviewScreen extends Screen {
         x = button(g, f, x, y, l[2], () -> ReviewClient.show(true), ReviewClient.showingSwordbot);
         x += 8;
         x = button(g, f, x, y, l[3], () -> ReviewClient.seek(0));
-        x = button(g, f, x, y, ReviewClient.playing ? "Pause" : "Play", ReviewScreen::togglePlay);
+        x = button(g, f, x, y, ReviewClient.playing ? Tr.t("Pause") : Tr.t("Play"), ReviewScreen::togglePlay);
         x += 8;
         if (speeds) {
             for (double s : SPEEDS) x = button(g, f, x, y, speedLabel(s), () -> ReviewClient.speed = s, ReviewClient.speed == s);
         }
-        button(g, f, closeX, y, "Close", this::onClose);
+        button(g, f, closeX, y, Tr.t("Close"), this::onClose);
         String time = clock(ReviewClient.clipFrom + ReviewClient.cursor) + "   " + clock(ReviewClient.cursor) + " / " + clock(Math.max(0, n - 1));
         g.text(f, time, graphX1 - f.width(time), graphY0 - 25, TEXT, true);
-        String help = "Tab switch  Esc back";
+        String help = Tr.t("Tab switch  Esc back");
         if (x + 16 + f.width(help) < closeX - 8) g.text(f, help, x + 16, y + 4, MUTED, true);
     }
 
@@ -542,7 +565,7 @@ final class ReviewScreen extends Screen {
 
     /** The clip row's buttons before the speeds: the labels plus Pause. */
     private static int rowWidth(Font f, String[] labels) {
-        int sum = f.width("Pause") + 11;
+        int sum = Math.max(f.width(Tr.t("Pause")), f.width(Tr.t("Play"))) + 11;
         for (String t : labels) sum += f.width(t) + 11;
         return sum;
     }
@@ -557,10 +580,21 @@ final class ReviewScreen extends Screen {
     }
 
     private void drawControls(GuiGraphicsExtractor g, Font f, int w, int y, int n) {
+        int closeX = w - 24 - f.width(Tr.t("Close")) - 8;
+        boolean aim = !ReviewClient.record.coachName.isEmpty();
+        String start = Tr.t("Start"), play = ReviewClient.playing ? Tr.t("Pause") : Tr.t("Play"), aimText = Tr.t("Bot aim"), marks = Tr.t("Stop at marks");
+        int need = graphX0 + controlsWidth(f, start, Math.max(f.width(Tr.t("Pause")), f.width(Tr.t("Play"))), aim ? aimText : null, marks);
+        if (need > closeX - 4) {
+            // Narrow window (or longer Spanish labels): the short forms.
+            start = "|<";
+            play = ReviewClient.playing ? "||" : "▶";
+            aimText = Tr.t("Aim");
+            marks = Tr.t("Marks");
+        }
         int x = graphX0;
-        x = button(g, f, x, y, "Start", () -> ReviewClient.seek(0));
+        x = button(g, f, x, y, start, () -> ReviewClient.seek(0));
         x = button(g, f, x, y, "<", () -> stepMark(-1));
-        x = button(g, f, x, y, ReviewClient.playing ? "Pause" : "Play", ReviewScreen::togglePlay);
+        x = button(g, f, x, y, play, ReviewScreen::togglePlay);
         x = button(g, f, x, y, ">", () -> stepMark(1));
         x += 8;
         for (double s : SPEEDS) {
@@ -568,14 +602,21 @@ final class ReviewScreen extends Screen {
             x = button(g, f, x, y, label, () -> ReviewClient.speed = s, ReviewClient.speed == s);
         }
         x += 8;
-        if (!ReviewClient.record.coachName.isEmpty()) x = button(g, f, x, y, "Bot aim", () -> ReviewClient.coachView = !ReviewClient.coachView, ReviewClient.coachView);
-        x = button(g, f, x, y, "Stop at marks", () -> ReviewClient.stopAtMarks = !ReviewClient.stopAtMarks, ReviewClient.stopAtMarks);
-        int closeX = w - 24 - f.width("Close") - 8;
-        button(g, f, closeX, y, "Close", this::onClose);
+        if (aim) x = button(g, f, x, y, aimText, () -> ReviewClient.coachView = !ReviewClient.coachView, ReviewClient.coachView);
+        x = button(g, f, x, y, marks, () -> ReviewClient.stopAtMarks = !ReviewClient.stopAtMarks, ReviewClient.stopAtMarks);
+        button(g, f, closeX, y, Tr.t("Close"), this::onClose);
         String time = clock(ReviewClient.cursor) + " / " + clock(Math.max(0, n - 1));
         g.text(f, time, graphX1 - f.width(time), graphY0 - 25, TEXT, true);
-        String help = "Space play  ←→ step  ↑↓ marks" + (ReviewClient.record.coachName.isEmpty() ? "" : "  B bot view") + (ReviewClient.clipsAvailable() ? "  P " + ReviewClient.botName() + "'s play" : "");
+        String help = Tr.t("Space play  ←→ step  ↑↓ marks") + (ReviewClient.record.coachName.isEmpty() ? "" : "  " + Tr.t("B bot view")) + (ReviewClient.clipsAvailable() ? "  " + Tr.t("P {0}'s play", ReviewClient.botName()) : "");
         if (x + 16 + f.width(help) < closeX - 8) g.text(f, help, x + 16, y + 4, MUTED, true);
+    }
+
+    /** Width of the main control row up to its last toggle, as {@link #button} lays it out. */
+    private static int controlsWidth(Font f, String start, int playW, String aim, String marks) {
+        int w = f.width(start) + f.width("<") + playW + f.width(">") + 4 * 11 + 8 + 8;
+        for (double s : SPEEDS) w += f.width(speedLabel(s)) + 11;
+        if (aim != null) w += f.width(aim) + 11;
+        return w + f.width(marks) + 11;
     }
 
     private int button(GuiGraphicsExtractor g, Font f, int x, int y, String label, Runnable action) {
