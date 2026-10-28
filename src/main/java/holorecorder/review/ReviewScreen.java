@@ -211,17 +211,35 @@ final class ReviewScreen extends Screen {
             if (hi >= 0) title += String.format(":  win %d%% -> %d%%", Math.round(a.shown[Math.max(0, m.from())] * 100), Math.round(a.shown[hi] * 100));
         }
         if (m.forced()) title += " (hard to avoid)";
-        java.util.List<String> lines = a.explain(m);
+        java.util.List<String> lines = new ArrayList<>(a.explain(m));
+        boolean clip = m.kind() != ReviewAnalysis.Kind.BEST && ReviewClient.clipsAvailable();
+        int start = clipStart(a), coachLine = -1;
+        if (m.kind() != ReviewAnalysis.Kind.BEST) {
+            ReviewRecord sb = ReviewClient.clipAt(start);
+            int len = sb != null ? sb.ticks.size() : ReviewClient.CLIP_TICKS;
+            lines.add("You: " + summary(ReviewClient.chips(ReviewClient.slice(ReviewClient.record, start, len))));
+            if (sb != null) {
+                coachLine = lines.size();
+                lines.add("Swordbot: " + summary(ReviewClient.chips(sb)));
+            } else if (clip && !ReviewClient.noClipAt(start)) {
+                coachLine = lines.size();
+                lines.add(ReviewClient.fetching(start) ? "Swordbot: playing it out..." : "Swordbot: ...");
+                ReviewClient.prefetch(start);
+            }
+        }
+        int x0 = 46, max = w - 144 - x0;
+        for (int k = 0; k < lines.size(); k++) {
+            if (f.width(lines.get(k)) > max) lines.set(k, f.plainSubstrByWidth(lines.get(k), max - f.width("...")) + "...");
+        }
         int bw = f.width(title);
         for (String l : lines) bw = Math.max(bw, f.width(l));
-        boolean clip = m.kind() != ReviewAnalysis.Kind.BEST && ReviewClient.clipsAvailable();
         String play = ReviewClient.clipPending() ? "Swordbot is playing..." : "\u25B6 Swordbot's play from here";
         if (clip) bw = Math.max(bw, f.width(play) + 8);
-        int x0 = 46, y1 = h - 92, y0 = y1 - 14 - lines.size() * 10 - (clip ? 18 : 0);
+        int y1 = h - 92, y0 = y1 - 14 - lines.size() * 10 - (clip ? 18 : 0);
         g.fill(x0 - 4, y0 - 4, x0 + bw + 4, y1, PANEL);
         g.fill(x0 - 4, y0 - 4, x0 - 2, y1, color(m.kind()));
         g.text(f, title, x0, y0, color(m.kind()), true);
-        for (int k = 0; k < lines.size(); k++) g.text(f, lines.get(k), x0, y0 + 13 + k * 10, TEXT, true);
+        for (int k = 0; k < lines.size(); k++) g.text(f, lines.get(k), x0, y0 + 13 + k * 10, k == coachLine ? COACH : TEXT, true);
         if (clip) button(g, f, x0, y1 - 18, play, () -> ReviewClient.requestClip(clipStart(a)), ReviewClient.clipPending());
     }
 
@@ -403,7 +421,7 @@ final class ReviewScreen extends Screen {
     /** "Sprint hit + W-tap x2, Crit": the most used moves by count (3 at most). */
     private static String summary(List<ReviewClient.Chip> moves) {
         java.util.Map<String, Integer> count = new java.util.LinkedHashMap<>();
-        for (ReviewClient.Chip m : moves) count.merge(m.name(), 1, Integer::sum);
+        for (ReviewClient.Chip m : moves) count.merge(m.name().replace(" (not charged)", ""), 1, Integer::sum);
         List<java.util.Map.Entry<String, Integer>> top = new ArrayList<>(count.entrySet());
         top.sort((a, b) -> b.getValue() - a.getValue());
         List<String> parts = new ArrayList<>();

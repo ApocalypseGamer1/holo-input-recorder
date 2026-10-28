@@ -69,6 +69,13 @@ public final class ReviewClient {
     static int clipFrom = -1;
     private static String clipNote;
     private static long clipAsked, clipNoteAt;
+    /** Clips already played or fetched for the mistake box, by start tick; ticks the server could not play. */
+    private static final java.util.Map<Integer, ReviewRecord> clips = new java.util.HashMap<>();
+    private static final java.util.Set<Integer> noClip = new java.util.HashSet<>();
+    private static boolean clipSilent;
+    private static int clipTick;
+    /** Ticks in a server clip: 40 played plus the state after the last. */
+    static final int CLIP_TICKS = 41;
 
     private ReviewClient() {
     }
@@ -173,6 +180,9 @@ public final class ReviewClient {
         clipFrom = -1;
         clipNote = null;
         clipAsked = 0;
+        clipSilent = false;
+        clips.clear();
+        noClip.clear();
     }
 
     static boolean inClip() {
@@ -184,8 +194,9 @@ public final class ReviewClient {
         return session >= 0 && !inClip() && ClientPlayNetworking.canSend(ReviewClipRequestPayload.TYPE);
     }
 
+    /** A clip the player asked for is on its way (a quiet fetch for the mistake box does not count). */
     static boolean clipPending() {
-        return clipAsked != 0;
+        return clipAsked != 0 && !clipSilent;
     }
 
     /** What to tell the player about the last request, or null. */
@@ -200,17 +211,57 @@ public final class ReviewClient {
     }
 
     static void requestClip(int tick) {
+        tick = Math.max(0, tick);
         if (!clipsAvailable() || clipPending()) return;
-        clipAsked = System.nanoTime();
+        ReviewRecord have = clips.get(tick);
+        if (have != null) {
+            playClip(have, tick);
+            return;
+        }
         clipNote = null;
-        ClientPlayNetworking.send(new ReviewClipRequestPayload(session, Math.max(0, tick)));
+        if (clipAsked != 0) {
+            if (clipTick == tick) clipSilent = false;   // the quiet fetch of this moment plays when it arrives
+            return;
+        }
+        send(tick, false);
+    }
+
+    /** Fetches Swordbot's play from {@code tick} for the mistake box, without playing it. */
+    static void prefetch(int tick) {
+        tick = Math.max(0, tick);
+        if (!clipsAvailable() || clipAsked != 0 || clips.containsKey(tick) || noClip.contains(tick)) return;
+        send(tick, true);
+    }
+
+    private static void send(int tick, boolean silent) {
+        clipAsked = System.nanoTime();
+        clipSilent = silent;
+        clipTick = tick;
+        ClientPlayNetworking.send(new ReviewClipRequestPayload(session, tick));
+    }
+
+    /** Swordbot's play from {@code tick}, if it was fetched. */
+    static ReviewRecord clipAt(int tick) {
+        return clips.get(Math.max(0, tick));
+    }
+
+    /** True while the server plays out the clip from {@code tick}. */
+    static boolean fetching(int tick) {
+        return clipAsked != 0 && clipTick == Math.max(0, tick);
+    }
+
+    static boolean noClipAt(int tick) {
+        return noClip.contains(Math.max(0, tick));
     }
 
     public static void receiveClip(ReviewClipPayload p) {
-        if (!active || p.session() != session || !clipPending()) return;
+        if (!active || p.session() != session || clipAsked == 0) return;
+        boolean silent = clipSilent;
         clipAsked = 0;
+        clipSilent = false;
         if (p.status() != ReviewClipPayload.OK) {
-            note(clipError(p.status()));
+            if (p.status() != ReviewClipPayload.BUSY) noClip.add(p.tick());
+            if (!silent) note(clipError(p.status()));
             return;
         }
         ReviewRecord clip;
@@ -222,10 +273,12 @@ public final class ReviewClient {
             return;
         }
         if (clip.ticks.size() < 2) {
-            note("Swordbot's play stopped at once. Try another moment.");
+            noClip.add(p.tick());
+            if (!silent) note("Swordbot's play stopped at once. Try another moment.");
             return;
         }
-        playClip(clip, p.tick());
+        clips.put(p.tick(), clip);
+        if (!silent) playClip(clip, p.tick());
     }
 
     static String clipError(int status) {
@@ -246,6 +299,7 @@ public final class ReviewClient {
             roundCursor = cursor;
         }
         clipFrom = from;
+        clips.put(from, clip);
         swordbot = clip;
         yours = slice(round, from, clip.ticks.size());
         show(false);
@@ -480,9 +534,10 @@ public final class ReviewClient {
         long now = System.nanoTime();
         double dt = lastNanos == 0 ? 0 : Math.min(0.25, (now - lastNanos) / 1e9);
         lastNanos = now;
-        if (clipPending() && now - clipAsked > 10_000_000_000L) {
+        if (clipAsked != 0 && now - clipAsked > 10_000_000_000L) {
+            if (!clipSilent) note("No answer from the server. Try again.");
             clipAsked = 0;
-            note("No answer from the server. Try again.");
+            clipSilent = false;
         }
         int n = ticks();
         if (playing) {

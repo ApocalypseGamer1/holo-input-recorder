@@ -118,6 +118,7 @@ public final class ReviewDemo {
                 case 18 -> shot(mc, "clip2", 5);
                 case 19 -> {
                     ReviewClient.endClip();
+                    if (!ReviewClient.analysis.marks().isEmpty()) ReviewClient.seek(ReviewClient.analysis.marks().get(0).index());
                     wait = 10;
                 }
                 case 20 -> shot(mc, "clipback", 5);
