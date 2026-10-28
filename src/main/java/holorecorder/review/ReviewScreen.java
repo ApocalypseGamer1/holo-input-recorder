@@ -176,7 +176,10 @@ final class ReviewScreen extends Screen {
         ReviewAnalysis.Mark m = a.markAt(i);
         if (m == null) return;
         String title = symbol(m.kind()) + " " + label(m.kind());
-        if (m.kind() != ReviewAnalysis.Kind.MISS) title += String.format(" %+d%%", Math.round(m.delta() * 100));
+        if (m.kind() != ReviewAnalysis.Kind.MISS) {
+            int hi = Math.min(a.shown.length - 1, m.to());
+            if (hi >= 0) title += String.format(":  win %d%% -> %d%%", Math.round(a.shown[Math.max(0, m.from())] * 100), Math.round(a.shown[hi] * 100));
+        }
         if (m.forced()) title += " (hard to avoid)";
         java.util.List<String> lines = a.explain(m);
         int bw = f.width(title);
@@ -226,7 +229,7 @@ final class ReviewScreen extends Screen {
         g.text(f, "You", x0, y0, TEXT, true);
         boolean[] youKeys = {fwd, left, back, right, (k & 16) != 0, (k & 64) != 0, you.self.swingTime == -1};
         keyRow(g, f, x0, y0 + 11, youKeys, null, ON);
-        g.text(f, "Bot would", x0, y0 + 30, COACH, true);
+        g.text(f, "Swordbot would", x0, y0 + 30, COACH, true);
         if (s == null) {
             g.text(f, "no data here", x0, y0 + 41, MUTED, true);
         } else {
