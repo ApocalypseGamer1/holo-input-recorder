@@ -7,7 +7,11 @@
     "KeyboardHandlerMixin",
     "KeyMappingAccessor",
     "MinecraftMixin",
-    "ClientCommonPacketListenerImplMixin"
+    "ClientCommonPacketListenerImplMixin",
+    "ReviewCameraMixin",
+    "ReviewRenderMixin",
+    "ReviewEntityMixin",
+    "ReviewSkinMixin"
   ],
   "injectors": {
     "defaultRequire": 1
