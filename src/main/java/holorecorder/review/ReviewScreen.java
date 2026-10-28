@@ -17,7 +17,6 @@ final class ReviewScreen extends Screen {
     private static final int TEXT = 0xFFFFFFFF, MUTED = 0xFFB0B0B0, COACH = 0xFF4FD8FF, ON = 0xFF81B64C, OFF = 0x60FFFFFF;
     private static final double[] SPEEDS = {0.25, 0.5, 1};
     private static final double HIT_MARK_TICKS = 6, GOT_HIT_TICKS = 10;
-    private static final int SNAP_PX = 5;
 
     private record Button(int x, int y, int w, int h, Runnable action) {
         boolean hit(double mx, double my) {
@@ -117,7 +116,7 @@ final class ReviewScreen extends Screen {
         g.text(f, "You", x0, y0 + barH + 3, TEXT, true);
     }
 
-    /** Where the bot would aim: a ring at that direction; the crosshair is where you aimed. */
+    /** Where the bot would aim: a ring at that direction, an X when it would click; the crosshair is where you aimed. */
     private void drawAim(GuiGraphicsExtractor g, int w, int h, ReviewAnalysis.Suggestion s) {
         int cx = w / 2, cy = h / 2;
         double hit = ReviewClient.sinceYouHit();
@@ -141,8 +140,17 @@ final class ReviewScreen extends Screen {
         int py = cy + (int) Math.round(Math.tan(Math.toRadians(Math.max(-80, Math.min(80, off[1])))) * scale);
         px = Math.max(6, Math.min(w - 6, px));
         py = Math.max(6, Math.min(h - 90, py));
-        g.outline(px - 5, py - 5, 11, 11, COACH);
-        g.outline(px - 4, py - 4, 9, 9, 0x804FD8FF);
+        if (s.attackP() >= 0.5) {
+            for (int d = -5; d <= 5; d++) {
+                g.fill(px + d, py + d, px + d + 1, py + d + 1, COACH);
+                g.fill(px + d, py - d, px + d + 1, py - d + 1, COACH);
+                g.fill(px + d + 1, py + d, px + d + 2, py + d + 1, 0x804FD8FF);
+                g.fill(px + d + 1, py - d, px + d + 2, py - d + 1, 0x804FD8FF);
+            }
+        } else {
+            g.outline(px - 5, py - 5, 11, 11, COACH);
+            g.outline(px - 4, py - 4, 9, 9, 0x804FD8FF);
+        }
     }
 
     /** The bot hit you: red edges and the hearts lost, fading out over the hurt time. */
@@ -160,7 +168,7 @@ final class ReviewScreen extends Screen {
         }
         float hearts = ReviewClient.lastHitHearts();
         String text = "Bot hit you" + (hearts > 0 ? String.format("  -%.1f\u2764", hearts) : "");
-        g.centeredText(f, text, w / 2, h / 2 + 14, (int) Math.round(255 * k) << 24 | 0xFF5050);
+        g.centeredText(f, text, w / 2, h / 2 - 22, (int) Math.round(255 * k) << 24 | 0xFF5050);
     }
 
     /** What caused the mark the cursor is in: shown while its moment replays. */
@@ -216,12 +224,14 @@ final class ReviewScreen extends Screen {
         boolean fwd = (k & 1) != 0 && (k & 2) == 0, back = (k & 2) != 0 && (k & 1) == 0;
         boolean left = (k & 4) != 0 && (k & 8) == 0, right = (k & 8) != 0 && (k & 4) == 0;
         g.text(f, "You", x0, y0, TEXT, true);
-        keyRow(g, f, x0, y0 + 11, fwd, left, back, right, (k & 16) != 0, (k & 64) != 0, you.self.swingTime == -1, ON);
+        boolean[] youKeys = {fwd, left, back, right, (k & 16) != 0, (k & 64) != 0, you.self.swingTime == -1};
+        keyRow(g, f, x0, y0 + 11, youKeys, null, ON);
         g.text(f, "Bot would", x0, y0 + 30, COACH, true);
         if (s == null) {
             g.text(f, "no data here", x0, y0 + 41, MUTED, true);
         } else {
-            keyRow(g, f, x0, y0 + 41, s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5, COACH);
+            boolean[] bots = {s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5};
+            keyRow(g, f, x0, y0 + 41, bots, youKeys, COACH);
             String turn = turnText(s.yawDeg(), s.pitchDeg());
             g.text(f, "click " + Math.round(s.attackP() * 100) + "%  " + turn, x0, y0 + 58, MUTED, true);
         }
@@ -246,14 +256,14 @@ final class ReviewScreen extends Screen {
         return t.isEmpty() ? "hold aim" : t;
     }
 
-    private static void keyRow(GuiGraphicsExtractor g, Font f, int x, int y, boolean w, boolean a, boolean s, boolean d,
-                               boolean jump, boolean sprint, boolean click, int on) {
+    /** One key row; where {@code other} is given, keys that differ from it get a yellow frame. */
+    private static void keyRow(GuiGraphicsExtractor g, Font f, int x, int y, boolean[] lit, boolean[] other, int on) {
         String[] names = {"W", "A", "S", "D", "Jump", "Run", "Hit"};
-        boolean[] lit = {w, a, s, d, jump, sprint, click};
         for (int i = 0; i < names.length; i++) {
             int bw = f.width(names[i]) + 5;
             g.fill(x, y, x + bw, y + 13, lit[i] ? on : OFF);
             g.text(f, names[i], x + 3, y + 3, lit[i] ? 0xFF101010 : 0xFFE0E0E0, false);
+            if (other != null && other[i] != lit[i]) g.outline(x - 1, y - 1, bw + 2, 15, 0xFFFFD84F);
             x += bw + 2;
         }
     }
@@ -352,13 +362,6 @@ final class ReviewScreen extends Screen {
 
     private void scrubTo(double mx) {
         int n = ReviewClient.ticks();
-        for (ReviewAnalysis.Mark m : ReviewClient.analysis.marks()) {
-            if (Math.abs(tickX(m.index(), n) - mx) <= SNAP_PX) {
-                ReviewClient.seek(m.index());
-                ReviewClient.playing = false;
-                return;
-            }
-        }
         double f = (mx - graphX0) / (double) Math.max(1, graphX1 - graphX0 - 1);
         ReviewClient.seek(Math.max(0, Math.min(1, f)) * (n - 1));
         ReviewClient.playing = false;
