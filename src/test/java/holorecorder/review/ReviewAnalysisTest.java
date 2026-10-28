@@ -593,7 +593,7 @@ class ReviewAnalysisTest {
         coachAll(r, coach(1, 0, 0, 0, 1, 0, 0));
         keysAll(r, S);
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of("You backed off; the bot would push in"), a.causes(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("You backed off; Swordbot would push in"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -627,7 +627,13 @@ class ReviewAnalysisTest {
         coachAll(r, coach(1, 1, 0, 0, 1, 0, 0));
         keysAll(r, W);
         a = ReviewAnalysis.of(r);
-        assertEquals(List.of("Most of this part the bot would jump"), a.causes(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("Swordbot would jump more here"), a.causes(only(a, Kind.BLUNDER)));
+        for (int i = 0; i < 120; i++) {
+            r.ticks.get(i).coach = coach(1, i % 2, 0, 0, 1, 0, 0);
+            r.ticks.get(i).keys = i % 2 == 1 ? W | JUMP : W;
+        }
+        a = ReviewAnalysis.of(r);
+        assertEquals(List.of("You jumped at the wrong times"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -688,7 +694,7 @@ class ReviewAnalysisTest {
         for (int i = 0; i < 120; i++) r.ticks.get(i).self.health = i < 55 ? 20 : 16;
         ReviewAnalysis a = dropCase(r);
         assertEquals(List.of("The bot hit you 1 time (-2.0 hearts)", "You hit the bot 1 time",
-                "You missed 1 hit you could have made", "You backed off; the bot would push in", "You were not sprinting",
+                "You missed 1 hit you could have made", "You backed off; Swordbot would push in", "You were not sprinting",
                 "You jumped too much"), a.causes(only(a, Kind.BLUNDER)));
         List<String> lines = a.explain(only(a, Kind.BLUNDER));
         assertEquals(5, lines.size());
@@ -710,11 +716,11 @@ class ReviewAnalysisTest {
         Mark m = only(a, Kind.BLUNDER);
         String time = String.format(Locale.ROOT, "%d:%04.1f", m.index() / 1200, (m.index() % 1200) / 20.0);
         assertEquals(List.of(
-                String.format(Locale.ROOT, "Win chance %d%% -> %d%%", Math.round(a.shown[m.from()] * 100), Math.round(a.shown[m.to()] * 100)),
                 "Bot hit you 1x (-1.1❤), you hit it 1x (-0.6❤)",
                 "At " + time + " you pressed: S",
-                "Bot would press: W Run",
-                "You backed off; the bot would push in"), a.explain(m));
+                "Swordbot would press: W Run",
+                "You backed off; Swordbot would push in",
+                "You were not sprinting"), a.explain(m));
     }
 
     @Test
@@ -723,10 +729,10 @@ class ReviewAnalysisTest {
         coachAll(r, coach(1, 0, 0, 0, 1, 0, 0));
         keysAll(r, W);
         ReviewAnalysis a = ReviewAnalysis.of(r);
-        assertEquals(List.of("At 0:01.0 you played like the bot"), a.moment(20));
+        assertEquals(List.of("At 0:01.0 you played like Swordbot"), a.moment(20));
         r.ticks.get(21).self.yaw = 40f;
         a = ReviewAnalysis.of(r);
-        assertEquals(List.of("At 0:01.0 you pressed: W", "Same keys, but bot would turn left 40° more"), a.moment(20));
+        assertEquals(List.of("At 0:01.0 you pressed: W", "Same keys; Swordbot would turn left 40° more"), a.moment(20));
         assertEquals(List.of(), a.moment(59));
     }
 

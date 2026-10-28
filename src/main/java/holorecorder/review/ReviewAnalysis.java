@@ -112,15 +112,13 @@ public final class ReviewAnalysis {
     }
 
     /**
-     * Up to {@link #EXPLAIN_LINES} short lines on why the mark happened: what the bar did, the hit trade, what you pressed
-     * against what the bot would press at the tick the replay stops on, then the patterns over the window.
+     * Up to {@link #EXPLAIN_LINES} short lines on why the mark happened: the hit trade, what you pressed against what the
+     * coach (Swordbot) would press at the tick the replay stops on, then the patterns over the window.
      */
     public List<String> explain(Mark m) {
         List<String> out = new ArrayList<>();
         int lo = Math.max(0, m.from() - EXPLAIN_LEAD), hi = Math.min(n - 1, m.to());
         if (lo <= hi && m.kind() != Kind.MISS) {
-            out.add(String.format(Locale.ROOT, "Win chance %d%% -> %d%%",
-                    Math.round(shown[Math.max(0, m.from())] * 100), Math.round(shown[hi] * 100)));
             String trade = trade(lo, hi);
             if (trade != null) out.add(trade);
         }
@@ -166,11 +164,12 @@ public final class ReviewAnalysis {
         String bot = keys(s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5);
         double turn = wrap(s.yawDeg() - wrap(b.self.yaw - a.self.yaw));
         String time = String.format(Locale.ROOT, "%d:%04.1f", i / 1200, (i % 1200) / 20.0);
-        if (you.equals(bot) && Math.abs(turn) < 10) return List.of("At " + time + " you played like the bot");
-        String botLine = "Bot would press: " + bot;
+        if (you.equals(bot) && Math.abs(turn) < 10) return List.of("At " + time + " you played like Swordbot");
+        String botLine = "Swordbot would press: " + bot;
         if (Math.abs(turn) >= 10) {
-            String aim = ", turn " + (turn > 0 ? "right " : "left ") + Math.round(Math.abs(turn)) + "° more";
-            botLine = you.equals(bot) ? "Same keys, but bot would" + aim.substring(1) : botLine + aim;
+            String aim = "turn " + (turn > 0 ? "right " : "left ") + Math.round(Math.abs(turn)) + "° more";
+            if (you.equals(bot)) botLine = "Same keys; Swordbot would " + aim;
+            else if (botLine.length() + aim.length() + 2 <= 48) botLine += ", " + aim;
         }
         return List.of("At " + time + " you pressed: " + you, botLine);
     }
@@ -487,11 +486,13 @@ public final class ReviewAnalysis {
             }
         }
         if (c == 0) return;
-        if (back >= 0.4 * c) out.add("You backed off; the bot would push in");
+        if (back >= 0.4 * c) out.add("You backed off; Swordbot would push in");
         else if (noW >= 0.4 * c) out.add("You stopped moving in");
         if (wantSprint > 0 && noSprint >= 0.5 * wantSprint) out.add("You were not sprinting");
-        if (coachNoJump > 0 && jumped >= 0.3 * coachNoJump) out.add("You jumped too much");
-        if (missedJump >= 0.3 * c) out.add("Most of this part the bot would jump");
+        boolean tooMuch = coachNoJump > 0 && jumped >= 0.3 * coachNoJump, tooLittle = missedJump >= 0.5 * c;
+        if (tooMuch && tooLittle) out.add("You jumped at the wrong times");
+        else if (tooMuch) out.add("You jumped too much");
+        else if (tooLittle) out.add("Swordbot would jump more here");
     }
 
     /** Mean degrees between the player's look yaw and the direction to the bot; ticks on top of the bot are skipped. */
