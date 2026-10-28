@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(EntityRenderDispatcher.class)
 abstract class ReviewEntityMixin {
     @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
-    private <E extends Entity> void holo$reviewOnly(E entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> ci) {
+    private <E extends Entity> void holo$reviewOnly(E entity, Frustum frustum, double x, double y, double z, float partial, CallbackInfoReturnable<Boolean> ci) {
         if (ReviewClient.active() && entity != ReviewClient.ghost()) ci.setReturnValue(false);
     }
 }
