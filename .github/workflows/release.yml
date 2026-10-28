@@ -35,3 +35,4 @@ jobs:
           files: ${{ steps.jar.outputs.path }}
           fail_on_unmatched_files: true
           generate_release_notes: true
+          make_latest: false   # mc26.2 branch: the 26.3 jar stays the "latest" release

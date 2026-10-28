@@ -6,8 +6,7 @@
     "MouseHandlerMixin",
     "KeyboardHandlerMixin",
     "KeyMappingAccessor",
-    "MinecraftMixin",
-    "ClientCommonPacketListenerImplMixin"
+    "MinecraftMixin"
   ],
   "injectors": {
     "defaultRequire": 1

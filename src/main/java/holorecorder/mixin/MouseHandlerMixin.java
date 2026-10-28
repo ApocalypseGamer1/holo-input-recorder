@@ -15,6 +15,8 @@ abstract class MouseHandlerMixin {
     @Shadow private double accumulatedDY;
     @Shadow private boolean mouseGrabbed;
     @Shadow private boolean ignoreFirstMove;
+    @Shadow private double xpos;
+    @Shadow private double ypos;
 
     @Inject(method = "turnPlayer", at = @At("HEAD"))
     private void holo$rawTurn(double elapsed, CallbackInfo ci) {
@@ -22,14 +24,13 @@ abstract class MouseHandlerMixin {
     }
 
     /**
-     * The cursor callback, one call per queued event. 26.x passes the per-event delta ({@code dx}, {@code dy})
-     * itself and adds it to {@code accumulatedDX/DY} while the mouse is grabbed, so this is the same quantity
-     * as the tick total - with raw mouse motion on, one report per mouse poll rather than one merged delta per frame.
+     * The GLFW cursor-position callback, one call per queued event. At HEAD {@code xpos}/{@code ypos} still hold the
+     * previous position, so the difference is that single report's delta (26.3 passes it as arguments instead).
      */
     @Inject(method = "onMove", at = @At("HEAD"))
-    private void holo$rawMove(long window, double x, double y, double dx, double dy, CallbackInfo ci) {
+    private void holo$rawMove(long window, double x, double y, CallbackInfo ci) {
         // Not grabbed: the cursor inside the player inventory screen (window pixels, client flag 12 marks the tick).
-        if (mouseGrabbed ? !ignoreFirstMove : RawInputCapture.cursorCapture()) RawInputCapture.move(dx, dy);
+        if (mouseGrabbed ? !ignoreFirstMove : RawInputCapture.cursorCapture()) RawInputCapture.move(x - xpos, y - ypos);
     }
 
     @Inject(method = "onButton", at = @At("HEAD"))

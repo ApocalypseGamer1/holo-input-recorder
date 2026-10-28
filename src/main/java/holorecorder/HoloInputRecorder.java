@@ -207,7 +207,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
         Set<Integer> bound = new HashSet<>();
         for (KeyMapping mapping : client.options.keyMappings) {
             InputConstants.Key key = ((KeyMappingAccessor) (Object) mapping).holo$currentKey();
-            if (key != null && key.getType() == InputConstants.Type.KEYBOARD && key.getValue() >= 0) {
+            if (key != null && InputCodes.isBindableKey(key)) {
                 bound.add(key.getValue());
             }
         }

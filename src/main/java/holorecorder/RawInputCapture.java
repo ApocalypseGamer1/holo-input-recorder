@@ -1,12 +1,11 @@
 package holorecorder;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import holorecorder.protocol.ClientEventsPayload;
 
 /**
  * Render-thread counters drained once at the start of each client tick, plus the sub-tick input event log.
  *
- * <p>The counters keep the tick row exactly as it was. The event log is additive: every SDL input event that
+ * <p>The counters keep the tick row exactly as it was. The event log is additive: every GLFW input event that
  * fires between two drains is stored with the microsecond offset at which it ran, so a 1000 Hz mouse with raw
  * input on lands about one move event per millisecond.
  *
@@ -68,8 +67,8 @@ public final class RawInputCapture {
     public static synchronized void mouseTurn(double x, double y) { dx += x; dy += y; }
 
     public static synchronized void mousePress(int button) {
-        if (button == InputConstants.MOUSE_BUTTON_LEFT) leftPresses++;
-        else if (button == InputConstants.MOUSE_BUTTON_RIGHT) rightPresses++;
+        if (button == InputCodes.MOUSE_LEFT) leftPresses++;
+        else if (button == InputCodes.MOUSE_RIGHT) rightPresses++;
     }
 
     public static synchronized void swing() {
@@ -89,7 +88,7 @@ public final class RawInputCapture {
 
     public static synchronized void button(int button, boolean down, int modifiers) {
         record(down ? ClientEventsPayload.TYPE_BUTTON_DOWN : ClientEventsPayload.TYPE_BUTTON_UP,
-                button, modifiers);
+                InputCodes.buttonToWire(button), InputCodes.modsToWire(modifiers));
     }
 
     public static synchronized void key(int key, int action, int modifiers) {
@@ -100,7 +99,7 @@ public final class RawInputCapture {
             case -1 -> ClientEventsPayload.TYPE_KEY_REPEAT;
             default -> -1;
         };
-        if (type >= 0) record(type, key, modifiers);
+        if (type >= 0) record(type, InputCodes.keyToWire(key), InputCodes.modsToWire(modifiers));
     }
 
     public static synchronized void scroll(double xOffset, double yOffset) {
