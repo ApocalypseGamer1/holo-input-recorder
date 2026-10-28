@@ -522,10 +522,10 @@ public final class ReviewAnalysis {
                 default -> { }
             }
         }
-        if (smashedMe > 0) out.add("The bot mace-smashed you " + times(smashedMe) + String.format(Locale.ROOT, " (up to %.0f blocks)", biggest));
+        if (smashedMe > 0) out.add("Bot mace-smashed you " + smashedMe + "x" + String.format(Locale.ROOT, " (%.0f blocks)", biggest));
         if (myPops > 0) out.add(myPops == 1 ? "You popped a totem" : "You popped " + myPops + " totems");
         if (brokeMine > 0) out.add("The bot broke your shield");
-        if (botLaunches > 0 && myLaunches == 0) out.add("The bot launched with wind charges; you did not");
+        if (botLaunches > 0 && myLaunches == 0) out.add("Bot wind-launched; you did not");
         if (mySmashes > 0) out.add("You landed " + (mySmashes == 1 ? "a mace smash" : mySmashes + " mace smashes"));
     }
 

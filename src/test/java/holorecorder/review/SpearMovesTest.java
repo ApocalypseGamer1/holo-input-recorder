@@ -205,7 +205,7 @@ class SpearMovesTest {
         oppHit(r, 20);
         for (int i = 22; i < 40; i++) r.ticks.get(i).selfSpear.totems = 3;
         List<String> c = ReviewAnalysis.of(r).causes(new Mark(Kind.BLUNDER, 20, 18, 30, -0.4, false), false);
-        assertTrue(c.contains("The bot mace-smashed you 1 time (up to 8 blocks)"), c.toString());
+        assertTrue(c.contains("Bot mace-smashed you 1x (8 blocks)"), c.toString());
         assertTrue(c.contains("You popped a totem"), c.toString());
         assertFalse(c.stream().anyMatch(s -> s.startsWith("Your aim")), c.toString());
     }
