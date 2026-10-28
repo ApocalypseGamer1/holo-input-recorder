@@ -533,7 +533,7 @@ class ReviewAnalysisTest {
         return ReviewAnalysis.of(r);
     }
 
-    static final String NO_CAUSE = "No clear cause: small mistakes added up";
+    static final String NO_CAUSE = ReviewAnalysis.NO_CAUSE;
 
     @Test
     void botHitsLineCountsHitsAndHearts() {
@@ -542,7 +542,7 @@ class ReviewAnalysisTest {
         r.ticks.get(45).self.hurt = true;
         r.ticks.get(52).self.hurt = true;
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of("The bot hit you 2 times (-3.0 hearts)"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("The bot hit you 2 times (-3.0 hearts)"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -550,7 +550,7 @@ class ReviewAnalysisTest {
         ReviewRecord r = rec(120);
         r.ticks.get(50).self.hurt = true;
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of("The bot hit you 1 time"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("The bot hit you 1 time"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -561,7 +561,7 @@ class ReviewAnalysisTest {
         aimed(r);
         for (int i : new int[] {45, 50, 55}) r.ticks.get(i).opp.hurt = true;
         ReviewAnalysis a = ReviewAnalysis.of(r);
-        assertEquals(List.of("You hit the bot 3 times"), a.explain(only(a, Kind.BEST)));
+        assertEquals(List.of("You hit the bot 3 times"), a.causes(only(a, Kind.BEST)));
     }
 
     @Test
@@ -570,7 +570,7 @@ class ReviewAnalysisTest {
         r.ticks.get(50).self.hurt = true;
         r.ticks.get(55).opp.hurt = true;
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of("The bot hit you 1 time", "You hit the bot 1 time"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("The bot hit you 1 time", "You hit the bot 1 time"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -581,10 +581,10 @@ class ReviewAnalysisTest {
         for (Tick t : r.ticks) t.opp.x = 2;
         for (int i : new int[] {20, 21, 28}) r.ticks.get(i).coach = coach(0, 0, 0, 230, 1, 0, 0);
         ReviewAnalysis a = ReviewAnalysis.of(r);
-        assertEquals(List.of("You missed 2 hits you could have made"), a.explain(only(a, Kind.MISS)));
+        assertEquals(List.of("You missed 2 hits you could have made"), a.causes(only(a, Kind.MISS)));
         r.ticks.get(28).coach = coach(0, 0, 0, 0, 1, 0, 0);
         a = ReviewAnalysis.of(r);
-        assertEquals(List.of("You missed 1 hit you could have made"), a.explain(only(a, Kind.MISS)));
+        assertEquals(List.of("You missed 1 hit you could have made"), a.causes(only(a, Kind.MISS)));
     }
 
     @Test
@@ -593,7 +593,7 @@ class ReviewAnalysisTest {
         coachAll(r, coach(1, 0, 0, 0, 1, 0, 0));
         keysAll(r, S);
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of("You backed off; the bot would push in"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("You backed off; the bot would push in"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -602,7 +602,7 @@ class ReviewAnalysisTest {
         coachAll(r, coach(1, 0, 0, 0, 1, 0, 0));
         keysAll(r, 0);
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of("You stopped moving in"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("You stopped moving in"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -611,10 +611,10 @@ class ReviewAnalysisTest {
         coachAll(r, coach(1, 0, 1, 0, 1, 0, 0));
         keysAll(r, W);
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of("You were not sprinting"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("You were not sprinting"), a.causes(only(a, Kind.BLUNDER)));
         keysAll(r, W | SPRINT);
         a = ReviewAnalysis.of(r);
-        assertEquals(List.of(NO_CAUSE), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of(NO_CAUSE), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -623,11 +623,11 @@ class ReviewAnalysisTest {
         coachAll(r, coach(1, 0, 0, 0, 1, 0, 0));
         keysAll(r, W | JUMP);
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of("You jumped too much"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("You jumped too much"), a.causes(only(a, Kind.BLUNDER)));
         coachAll(r, coach(1, 1, 0, 0, 1, 0, 0));
         keysAll(r, W);
         a = ReviewAnalysis.of(r);
-        assertEquals(List.of("The bot would jump here"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("Most of this part the bot would jump"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -636,10 +636,10 @@ class ReviewAnalysisTest {
         dropCase(r);
         for (Tick t : r.ticks) t.self.yaw = -50f;
         ReviewAnalysis a = ReviewAnalysis.of(r);
-        assertEquals(List.of("Your aim was off the bot by 40°"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("Your aim was off the bot by 40°"), a.causes(only(a, Kind.BLUNDER)));
         for (Tick t : r.ticks) t.self.yaw = -70f;
         a = ReviewAnalysis.of(r);
-        assertEquals(List.of(NO_CAUSE), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of(NO_CAUSE), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -652,10 +652,10 @@ class ReviewAnalysisTest {
         step(r, 50, 0.8f, 0.3f);
         for (Tick t : r.ticks) t.self.yaw = 0f;
         ReviewAnalysis a = ReviewAnalysis.of(r);
-        assertEquals(List.of(NO_CAUSE), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of(NO_CAUSE), a.causes(only(a, Kind.BLUNDER)));
         for (Tick t : r.ticks) t.self.yaw = 180f;
         a = ReviewAnalysis.of(r);
-        assertEquals(List.of("Your aim was off the bot by 180°"), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of("Your aim was off the bot by 180°"), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -666,14 +666,14 @@ class ReviewAnalysisTest {
         Mark m = only(a, Kind.BLUNDER);
         int lo = Math.max(0, m.from() - ReviewAnalysis.EXPLAIN_LEAD);
         String expect = String.format(Locale.ROOT, "Distance went from %.1f to %.1f blocks", 3 + 0.05 * lo, 3 + 0.05 * m.to());
-        assertEquals(List.of(expect), a.explain(m));
+        assertEquals(List.of(expect), a.causes(m));
     }
 
     @Test
     void fallbackWhenNothingApplies() {
         ReviewRecord r = rec(120);
         ReviewAnalysis a = dropCase(r);
-        assertEquals(List.of(NO_CAUSE), a.explain(only(a, Kind.BLUNDER)));
+        assertEquals(List.of(NO_CAUSE), a.causes(only(a, Kind.BLUNDER)));
     }
 
     @Test
@@ -687,10 +687,47 @@ class ReviewAnalysisTest {
         r.ticks.get(60).opp.hurt = true;
         for (int i = 0; i < 120; i++) r.ticks.get(i).self.health = i < 55 ? 20 : 16;
         ReviewAnalysis a = dropCase(r);
-        List<String> lines = a.explain(only(a, Kind.BLUNDER));
         assertEquals(List.of("The bot hit you 1 time (-2.0 hearts)", "You hit the bot 1 time",
-                "You missed 1 hit you could have made", "You backed off; the bot would push in", "You were not sprinting"), lines);
+                "You missed 1 hit you could have made", "You backed off; the bot would push in", "You were not sprinting",
+                "You jumped too much"), a.causes(only(a, Kind.BLUNDER)));
+        List<String> lines = a.explain(only(a, Kind.BLUNDER));
+        assertEquals(5, lines.size());
         for (String l : lines) assertTrue(l.length() <= 48, l);
+    }
+
+    @Test
+    void explainLeadsWithTheBarTheTradeAndTheStopMoment() {
+        ReviewRecord r = rec(120);
+        coachAll(r, coach(1, 0, 1, 0, 1, 0, 0));
+        keysAll(r, S);
+        r.ticks.get(55).self.hurt = true;
+        r.ticks.get(60).opp.hurt = true;
+        for (int i = 0; i < 120; i++) {
+            r.ticks.get(i).self.health = i < 55 ? 20 : 17.8f;
+            r.ticks.get(i).opp.health = i < 60 ? 20 : 18.8f;
+        }
+        ReviewAnalysis a = dropCase(r);
+        Mark m = only(a, Kind.BLUNDER);
+        String time = String.format(Locale.ROOT, "%d:%04.1f", m.index() / 1200, (m.index() % 1200) / 20.0);
+        assertEquals(List.of(
+                String.format(Locale.ROOT, "Win chance %d%% -> %d%%", Math.round(a.shown[m.from()] * 100), Math.round(a.shown[m.to()] * 100)),
+                "Bot hit you 1x (-1.1❤), you hit it 1x (-0.6❤)",
+                "At " + time + " you pressed: S",
+                "Bot would press: W Run",
+                "You backed off; the bot would push in"), a.explain(m));
+    }
+
+    @Test
+    void stopMomentSaysWhenYouMatchedTheBotOrOnlyTheAimDiffers() {
+        ReviewRecord r = rec(60);
+        coachAll(r, coach(1, 0, 0, 0, 1, 0, 0));
+        keysAll(r, W);
+        ReviewAnalysis a = ReviewAnalysis.of(r);
+        assertEquals(List.of("At 0:01.0 you played like the bot"), a.moment(20));
+        r.ticks.get(21).self.yaw = 40f;
+        a = ReviewAnalysis.of(r);
+        assertEquals(List.of("At 0:01.0 you pressed: W", "Same keys, but bot would turn left 40° more"), a.moment(20));
+        assertEquals(List.of(), a.moment(59));
     }
 
     @Test

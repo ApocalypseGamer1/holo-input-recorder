@@ -111,12 +111,92 @@ public final class ReviewAnalysis {
         return best;
     }
 
-    /** Up to {@link #EXPLAIN_LINES} short plain-English lines on why the mark happened, most important first. */
+    /**
+     * Up to {@link #EXPLAIN_LINES} short lines on why the mark happened: what the bar did, the hit trade, what you pressed
+     * against what the bot would press at the tick the replay stops on, then the patterns over the window.
+     */
     public List<String> explain(Mark m) {
         List<String> out = new ArrayList<>();
         int lo = Math.max(0, m.from() - EXPLAIN_LEAD), hi = Math.min(n - 1, m.to());
+        if (lo <= hi && m.kind() != Kind.MISS) {
+            out.add(String.format(Locale.ROOT, "Win chance %d%% -> %d%%",
+                    Math.round(shown[Math.max(0, m.from())] * 100), Math.round(shown[hi] * 100)));
+            String trade = trade(lo, hi);
+            if (trade != null) out.add(trade);
+        }
+        if (m.kind() != Kind.BEST) out.addAll(moment(m.index()));
+        for (String c : causes(m, false)) if (!c.equals(NO_CAUSE) || out.isEmpty()) out.add(c);
+        return List.copyOf(out.subList(0, Math.min(out.size(), EXPLAIN_LINES)));
+    }
+
+    static final String NO_CAUSE = "No clear cause: small mistakes added up";
+
+    /** Hits and hearts both ways over the window, null when nobody was hit. */
+    private String trade(int lo, int hi) {
+        int took = 0, landed = 0;
+        double lost = 0, dealt = 0;
+        for (int i = lo; i <= hi; i++) {
+            Tick t = record.ticks.get(i);
+            if (t.self.hurt) took++;
+            if (t.opp.hurt) landed++;
+            if (i > 0) {
+                lost += Math.max(0, record.ticks.get(i - 1).self.health - t.self.health);
+                dealt += Math.max(0, record.ticks.get(i - 1).opp.health - t.opp.health);
+            }
+        }
+        if (took == 0 && landed == 0) return null;
+        String bot = took == 0 ? null : "Bot hit you " + took + "x" + hearts(lost);
+        String you = landed == 0 ? null : (bot == null ? "You hit the bot " : "you hit it ") + landed + "x" + hearts(dealt);
+        return bot == null ? you : you == null ? bot : bot + ", " + you;
+    }
+
+    private static String hearts(double health) {
+        return health > 0 ? String.format(Locale.ROOT, " (-%.1f❤)", health / 2.0) : "";
+    }
+
+    /** Your keys against the bot's at one tick, the tick a replay of the mark stops on. Empty without coach data. */
+    List<String> moment(int i) {
+        if (i < 0 || i + 1 >= n || suggestions[i] == null) return List.of();
+        Suggestion s = suggestions[i];
+        Tick a = record.ticks.get(i), b = record.ticks.get(i + 1);
+        int k = b.keys;
+        String you = keys((k & K_FWD) != 0 && (k & K_BACK) == 0, (k & K_LEFT) != 0 && (k & K_RIGHT) == 0,
+                (k & K_BACK) != 0 && (k & K_FWD) == 0, (k & K_RIGHT) != 0 && (k & K_LEFT) == 0,
+                (k & K_JUMP) != 0, (k & K_SPRINT) != 0, b.self.swingTime == -1);
+        String bot = keys(s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5);
+        double turn = wrap(s.yawDeg() - wrap(b.self.yaw - a.self.yaw));
+        String time = String.format(Locale.ROOT, "%d:%04.1f", i / 1200, (i % 1200) / 20.0);
+        if (you.equals(bot) && Math.abs(turn) < 10) return List.of("At " + time + " you played like the bot");
+        String botLine = "Bot would press: " + bot;
+        if (Math.abs(turn) >= 10) {
+            String aim = ", turn " + (turn > 0 ? "right " : "left ") + Math.round(Math.abs(turn)) + "° more";
+            botLine = you.equals(bot) ? "Same keys, but bot would" + aim.substring(1) : botLine + aim;
+        }
+        return List.of("At " + time + " you pressed: " + you, botLine);
+    }
+
+    private static String keys(boolean w, boolean a, boolean s, boolean d, boolean jump, boolean run, boolean hit) {
+        List<String> on = new ArrayList<>();
+        if (w) on.add("W");
+        if (a) on.add("A");
+        if (s) on.add("S");
+        if (d) on.add("D");
+        if (jump) on.add("Jump");
+        if (run) on.add("Run");
+        if (hit) on.add("Hit");
+        return on.isEmpty() ? "nothing" : String.join(" ", on);
+    }
+
+    List<String> causes(Mark m) {
+        return causes(m, true);
+    }
+
+    /** The window-level patterns behind a mark, most important first, without the summary lines. */
+    List<String> causes(Mark m, boolean hits) {
+        List<String> out = new ArrayList<>();
+        int lo = Math.max(0, m.from() - EXPLAIN_LEAD), hi = Math.min(n - 1, m.to());
         if (lo <= hi) {
-            explainHits(out, m, lo, hi);
+            if (hits) explainHits(out, m, lo, hi);
             int runs = missRuns(lo, hi);
             if (runs > 0) out.add("You missed " + runs + (runs == 1 ? " hit" : " hits") + " you could have made");
             explainMoves(out, lo, hi);
@@ -125,8 +205,8 @@ public final class ReviewAnalysis {
             double from = distance(record.ticks.get(lo)), to = distance(record.ticks.get(hi));
             if (Math.abs(to - from) >= 1.5) out.add(String.format(Locale.ROOT, "Distance went from %.1f to %.1f blocks", from, to));
         }
-        if (out.isEmpty()) out.add("No clear cause: small mistakes added up");
-        return List.copyOf(out.subList(0, Math.min(out.size(), EXPLAIN_LINES)));
+        if (out.isEmpty()) out.add(NO_CAUSE);
+        return out;
     }
 
     // ---- helpers ----
@@ -411,7 +491,7 @@ public final class ReviewAnalysis {
         else if (noW >= 0.4 * c) out.add("You stopped moving in");
         if (wantSprint > 0 && noSprint >= 0.5 * wantSprint) out.add("You were not sprinting");
         if (coachNoJump > 0 && jumped >= 0.3 * coachNoJump) out.add("You jumped too much");
-        if (missedJump >= 0.3 * c) out.add("The bot would jump here");
+        if (missedJump >= 0.3 * c) out.add("Most of this part the bot would jump");
     }
 
     /** Mean degrees between the player's look yaw and the direction to the bot; ticks on top of the bot are skipped. */

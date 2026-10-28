@@ -280,10 +280,7 @@ public final class ReviewClient {
             ghost.hurtTime = hurtLeft(oppHurt);
             ghost.hurtDuration = HURT_TICKS;
         }
-        if (mc.player != null) {
-            mc.player.hurtTime = hurtLeft(selfHurt);
-            mc.player.hurtDuration = HURT_TICKS;
-        }
+        if (mc.player != null) mc.player.hurtTime = 0;
         ReviewAnalysis.Suggestion s = analysis.suggestion(whole);
         double yawOff = s == null ? 0 : s.yawDeg(), pitchOff = s == null ? 0 : s.pitchDeg();
         double k = 1 - Math.exp(-dt / 0.12);
