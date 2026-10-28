@@ -8,6 +8,7 @@ import holorecorder.protocol.ClientModsV2Payload;
 import holorecorder.protocol.IntegrityChallengePayload;
 import holorecorder.protocol.IntegrityResponsePayload;
 import holorecorder.protocol.RoundStatePayload;
+import holorecorder.protocol.WinBarPayload;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -55,10 +56,15 @@ public final class HoloInputRecorder implements ClientModInitializer {
         PayloadTypeRegistry.serverboundPlay().register(IntegrityResponsePayload.TYPE, IntegrityResponsePayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(RoundStatePayload.TYPE, RoundStatePayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(IntegrityChallengePayload.TYPE, IntegrityChallengePayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(WinBarPayload.TYPE, WinBarPayload.CODEC);
         ClientPlayNetworking.registerGlobalReceiver(RoundStatePayload.TYPE, (payload, context) ->
                 context.client().execute(() -> setRound(context.client(), payload)));
         ClientPlayNetworking.registerGlobalReceiver(IntegrityChallengePayload.TYPE, (payload, context) ->
                 answerIntegrity(context.client(), payload));
+        ClientPlayNetworking.registerGlobalReceiver(WinBarPayload.TYPE, (payload, context) ->
+                context.client().execute(() -> WinBarHud.receive(context.client(), payload)));
+        WinBarHud.register();
+        ClientTickEvents.END_CLIENT_TICK.register(WinBarHud::demoTick);
         RawInputCapture.screenProbe(() -> screenKind(Minecraft.getInstance()));
         ClientTickEvents.START_CLIENT_TICK.register(HoloInputRecorder::captureTick);
         // Mod list for data protection: once per connection (JOIN also fires after a transfer), only if the server declared
@@ -71,7 +77,10 @@ public final class HoloInputRecorder implements ClientModInitializer {
                         ClientModsReport::fromLoader, ClientPlayNetworking::send);
             }
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            reset();
+            WinBarHud.reset();
+        });
     }
 
     /**

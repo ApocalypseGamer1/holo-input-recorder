@@ -21,6 +21,8 @@ No building needed: download the JAR from
 
 The client shows `Holo input capture active for this round` when recording starts and `Holo input capture saved` when it stops.
 
+During a sword fight on a Holo server the mod also draws a win bar on the left edge of the screen, like the evaluation bar in chess: your chance to win at the bottom, the opponent's at the top, with the leader's percentage at its end. The server sends the numbers; the bar hides when the fight ends and when F1 or F3 is on. The server has a per-player `/winbar on|off` switch.
+
 ## Build
 
 Only needed if you want to change the mod; the release JAR above is the same build.
