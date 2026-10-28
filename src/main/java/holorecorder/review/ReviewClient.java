@@ -187,9 +187,15 @@ public final class ReviewClient {
         return round != null;
     }
 
-    /** The server can show Swordbot's play from a moment of this round. */
+    /** Who plays your side in a clip: the Spearmace model in a Spearmace round, else Swordbot. */
+    static String botName() {
+        ReviewRecord r = round != null ? round : record;
+        return r != null && r.spear() ? "Spearmace bot" : "Swordbot";
+    }
+
+    /** The server can show the bot's play from a moment of this round. */
     static boolean clipsAvailable() {
-        return session >= 0 && !inClip() && (record == null || !record.spear()) && ClientPlayNetworking.canSend(ReviewClipRequestPayload.TYPE);
+        return session >= 0 && !inClip() && ClientPlayNetworking.canSend(ReviewClipRequestPayload.TYPE);
     }
 
     /** A clip the player asked for is on its way (a quiet fetch for the mistake box does not count). */
@@ -199,7 +205,7 @@ public final class ReviewClient {
 
     /** What to tell the player about the last request, or null. */
     static String clipNote() {
-        if (clipPending()) return "Swordbot is playing it...";
+        if (clipPending()) return botName() + " is playing it...";
         return clipNote != null && System.nanoTime() - clipNoteAt < 6_000_000_000L ? clipNote : null;
     }
 
@@ -267,12 +273,12 @@ public final class ReviewClient {
             clip = ReviewRecord.fromBytes(p.data());
         } catch (IOException e) {
             LOG.warn("holorec: review clip not readable: {}", e.toString());
-            note("Swordbot's play could not be opened. Update the Holoplayer mod.");
+            note(botName() + "'s play could not be opened. Update the Holoplayer mod.");
             return;
         }
         if (clip.ticks.size() < 2) {
             noClip.add(p.tick());
-            if (!silent) note("Swordbot's play stopped at once. Try another moment.");
+            if (!silent) note(botName() + "'s play stopped at once. Try another moment.");
             return;
         }
         clips.put(p.tick(), clip);
@@ -281,11 +287,11 @@ public final class ReviewClient {
 
     static String clipError(int status) {
         return switch (status) {
-            case ReviewClipPayload.BUSY -> "Swordbot is still busy. Try again.";
-            case ReviewClipPayload.NO_BOT -> "The bot is gone, so Swordbot cannot play here.";
+            case ReviewClipPayload.BUSY -> botName() + " is still busy. Try again.";
+            case ReviewClipPayload.NO_BOT -> "The bot is gone, so " + botName() + " cannot play here.";
             case ReviewClipPayload.TOO_LATE -> "Too near the end of the round. Pick an earlier moment.";
-            case ReviewClipPayload.FAILED -> "Swordbot's play stopped. Try again.";
-            default -> "Swordbot's play is not available for this round.";
+            case ReviewClipPayload.FAILED -> botName() + "'s play stopped. Try again.";
+            default -> botName() + "'s play is not available for this round.";
         };
     }
 
