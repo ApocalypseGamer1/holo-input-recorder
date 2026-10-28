@@ -11,12 +11,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Mod text in the player's language. English text is the key; {0}, {1}... are filled in order. Spanish lives in
- * holorecorder/lang/es/*.json. The language is the server's (what the player picked there), else the game's.
+ * Mod text in the player's language. English text is the key; {0}, {1}... are filled in order. Translations live in
+ * holorecorder/lang/<code>/*.json. The language is the server's (what the player picked there), else the game's.
  */
 public final class Tr {
-    static final String[] FILES = {"screen.json", "text.json"};
-    private static final Map<String, String> ES = load("es");
+    static final String[] FILES = {"screen.json", "text.json", "extra.json"};
+    /** Language codes with files, as the server sends them; a game locale maps by prefix (pt_br -> pt), zh_hk -> yue. */
+    public static final String[] CODES = {"es", "pt", "fr", "de", "it", "ru", "pl", "tr", "zh", "yue", "ja", "ko"};
+    private static final Map<String, Map<String, String>> TABLES = new java.util.concurrent.ConcurrentHashMap<>();
     private static volatile String server;
     /** Tests only: forces a language. */
     static volatile String forced;
@@ -25,12 +27,18 @@ public final class Tr {
     }
 
     public static String t(String english, Object... args) {
-        String s = spanish() ? ES.getOrDefault(english, english) : english;
+        String code = code();
+        String s = code.equals("en") ? english : table(code).getOrDefault(english, english);
         for (int i = 0; i < args.length; i++) s = s.replace("{" + i + "}", String.valueOf(args[i]));
         return s;
     }
 
     public static boolean spanish() {
+        return code().equals("es");
+    }
+
+    /** The current language code: "en", or one of {@link #CODES}. */
+    public static String code() {
         String l = forced != null ? forced : server;
         if (l == null) {
             try {
@@ -40,11 +48,23 @@ public final class Tr {
                 l = "en";
             }
         }
-        return l != null && l.toLowerCase(java.util.Locale.ROOT).startsWith("es");
+        return resolve(l);
+    }
+
+    static String resolve(String locale) {
+        if (locale == null) return "en";
+        String l = locale.toLowerCase(java.util.Locale.ROOT);
+        if (l.startsWith("zh_hk") || l.startsWith("yue")) return "yue";
+        for (String c : CODES) if (l.startsWith(c)) return c;
+        return "en";
     }
 
     public static void server(String code) {
         server = code == null || code.isEmpty() ? null : code;
+    }
+
+    static Map<String, String> table(String code) {
+        return TABLES.computeIfAbsent(code, Tr::load);
     }
 
     static Map<String, String> load(String lang) {
@@ -62,6 +82,6 @@ public final class Tr {
     }
 
     static Map<String, String> spanishTable() {
-        return ES;
+        return table("es");
     }
 }

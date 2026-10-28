@@ -165,7 +165,7 @@ public final class ReviewAnalysis {
         String bot = took == 0 ? null : Tr.t("Bot hit you {0}x{1}", took, hearts(lost));
         String you = landed == 0 ? null : bot == null ? Tr.t("You hit the bot {0}x{1}", landed, hearts(dealt))
                 : Tr.t("you hit it {0}x{1}", landed, hearts(dealt));
-        return bot == null ? you : you == null ? bot : bot + ", " + you;
+        return bot == null ? you : you == null ? bot : Tr.t("{0}, {1}", bot, you);
     }
 
     private static String hearts(double health) {

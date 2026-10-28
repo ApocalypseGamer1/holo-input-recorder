@@ -53,6 +53,31 @@ class TrCoverageTest {
         assertEquals("not in the table 3x", Tr.t("not in the table {0}x", 3));
     }
 
+    @Test
+    void everyLanguageHasEverySpanishEntry() {
+        Map<String, String> es = Tr.spanishTable();
+        for (String code : Tr.CODES) {
+            Map<String, String> t = Tr.table(code);
+            List<String> missing = new ArrayList<>(), badArgs = new ArrayList<>();
+            for (var e : es.entrySet()) {
+                String s = t.get(e.getKey());
+                if (s == null || s.isBlank()) missing.add(e.getKey());
+                else if (!args(e.getValue()).equals(args(s))) badArgs.add(e.getKey() + " -> " + s);
+            }
+            assertTrue(missing.isEmpty(), code + ": " + missing.size() + " missing, e.g. " + missing.stream().limit(5).toList());
+            assertTrue(badArgs.isEmpty(), code + ": placeholders differ:\n" + String.join("\n", badArgs));
+        }
+    }
+
+    @Test
+    void gameLocalesMapToTheirLanguage() {
+        assertEquals("pt", Tr.resolve("pt_br"));
+        assertEquals("yue", Tr.resolve("zh_hk"));
+        assertEquals("zh", Tr.resolve("zh_cn"));
+        assertEquals("en", Tr.resolve("nl_nl"));
+        assertEquals("es", Tr.resolve("es_mx"));
+    }
+
     private static TreeSet<String> args(String s) {
         TreeSet<String> out = new TreeSet<>();
         Matcher m = ARG.matcher(s);
