@@ -68,6 +68,32 @@ public final class ReviewDemo {
                     wait = 20;
                 }
                 case 10 -> shot(mc, "after", 10);
+                case 11 -> {
+                    ReviewRecord r = ReviewRecord.fromBytes(Files.readAllBytes(Path.of(FILE)));
+                    ReviewRecord.Fighter first = r.ticks.get(0).self;
+                    double dx = mc.player.getX() - first.x, dy = mc.player.getY() - first.y, dz = mc.player.getZ() - first.z;
+                    for (ReviewRecord.Tick t : r.ticks) {
+                        for (ReviewRecord.Fighter f : new ReviewRecord.Fighter[] {t.self, t.opp}) {
+                            f.x += dx;
+                            f.y += dy;
+                            f.z += dz;
+                        }
+                    }
+                    ReviewClient.startLocal(mc, r);
+                    ReviewClient.seek(186.5);
+                    ReviewClient.playing = false;
+                    wait = 40;
+                }
+                case 12 -> shot(mc, "gothit", 5);
+                case 13 -> {
+                    ReviewClient.seek(150.5);
+                    wait = 10;
+                }
+                case 14 -> shot(mc, "scrub", 5);
+                case 15 -> {
+                    ReviewClient.stop(mc, true);
+                    wait = 10;
+                }
                 default -> mc.stop();
             }
         } catch (Exception e) {

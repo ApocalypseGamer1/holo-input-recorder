@@ -16,6 +16,8 @@ final class ReviewScreen extends Screen {
     private static final int LIGHT = 0xFFEDEDED, DARK = 0xFF3A3A3A, OUTLINE = 0xFF101010, PANEL = 0xB0000000;
     private static final int TEXT = 0xFFFFFFFF, MUTED = 0xFFB0B0B0, COACH = 0xFF4FD8FF, ON = 0xFF81B64C, OFF = 0x60FFFFFF;
     private static final double[] SPEEDS = {0.25, 0.5, 1};
+    private static final double HIT_MARK_TICKS = 6, GOT_HIT_TICKS = 10;
+    private static final int SNAP_PX = 5;
 
     private record Button(int x, int y, int w, int h, Runnable action) {
         boolean hit(double mx, double my) {
@@ -85,10 +87,12 @@ final class ReviewScreen extends Screen {
         int w = width, h = height, n = ReviewClient.ticks(), i = (int) Math.floor(ReviewClient.cursor);
         float shown = a.shown.length == 0 ? 0.5f : a.shown[Math.max(0, Math.min(a.shown.length - 1, i))];
 
+        drawGotHit(g, f, w, h);
         drawBar(g, f, h, shown, r);
         drawAim(g, w, h, a.suggestion(i));
         drawHeader(g, f, w, r, a);
         drawKeys(g, f, w, h, r, a, i);
+        drawCause(g, f, w, h, a, i);
 
         int panelY = h - 84;
         g.fill(0, panelY, w, h, PANEL);
@@ -116,8 +120,19 @@ final class ReviewScreen extends Screen {
     /** Where the bot would aim: a ring at that direction; the crosshair is where you aimed. */
     private void drawAim(GuiGraphicsExtractor g, int w, int h, ReviewAnalysis.Suggestion s) {
         int cx = w / 2, cy = h / 2;
-        g.fill(cx - 4, cy, cx + 5, cy + 1, 0xC0FFFFFF);
-        g.fill(cx, cy - 4, cx + 1, cy + 5, 0xC0FFFFFF);
+        double hit = ReviewClient.sinceYouHit();
+        int cross = hit < HIT_MARK_TICKS ? 0xFFFF4040 : 0xC0FFFFFF;
+        g.fill(cx - 4, cy, cx + 5, cy + 1, cross);
+        g.fill(cx, cy - 4, cx + 1, cy + 5, cross);
+        if (hit < HIT_MARK_TICKS) {
+            int alpha = (int) Math.round(255 * (1 - hit / HIT_MARK_TICKS)) << 24;
+            for (int d = 3; d <= 6; d++) {
+                g.fill(cx - d, cy - d, cx - d + 1, cy - d + 1, alpha | 0xFFFFFF);
+                g.fill(cx + d, cy - d, cx + d + 1, cy - d + 1, alpha | 0xFFFFFF);
+                g.fill(cx - d, cy + d, cx - d + 1, cy + d + 1, alpha | 0xFFFFFF);
+                g.fill(cx + d, cy + d, cx + d + 1, cy + d + 1, alpha | 0xFFFFFF);
+            }
+        }
         if (s == null || ReviewClient.coachView) return;
         double[] off = ReviewClient.coachOffset();
         double fov = Math.toRadians(minecraft.gameRenderer.mainCamera().getFov());
@@ -128,6 +143,41 @@ final class ReviewScreen extends Screen {
         py = Math.max(6, Math.min(h - 90, py));
         g.outline(px - 5, py - 5, 11, 11, COACH);
         g.outline(px - 4, py - 4, 9, 9, 0x804FD8FF);
+    }
+
+    /** The bot hit you: red edges and the hearts lost, fading out over the hurt time. */
+    private void drawGotHit(GuiGraphicsExtractor g, Font f, int w, int h) {
+        double since = ReviewClient.sinceYouGotHit();
+        if (since >= GOT_HIT_TICKS) return;
+        double k = 1 - since / GOT_HIT_TICKS;
+        for (int band = 0; band < 8; band++) {
+            int a = (int) Math.round(110 * k * (8 - band) / 8.0) << 24 | 0xC00000;
+            int e = band * 3;
+            g.fill(e, e, w - e, e + 3, a);
+            g.fill(e, h - e - 3, w - e, h - e, a);
+            g.fill(e, e + 3, e + 3, h - e - 3, a);
+            g.fill(w - e - 3, e + 3, w - e, h - e - 3, a);
+        }
+        float hearts = ReviewClient.lastHitHearts();
+        String text = "Bot hit you" + (hearts > 0 ? String.format("  -%.1f\u2764", hearts) : "");
+        g.centeredText(f, text, w / 2, h / 2 + 14, (int) Math.round(255 * k) << 24 | 0xFF5050);
+    }
+
+    /** What caused the mark the cursor is in: shown while its moment replays. */
+    private void drawCause(GuiGraphicsExtractor g, Font f, int w, int h, ReviewAnalysis a, int i) {
+        ReviewAnalysis.Mark m = a.markAt(i);
+        if (m == null) return;
+        String title = symbol(m.kind()) + " " + label(m.kind());
+        if (m.kind() != ReviewAnalysis.Kind.MISS) title += String.format(" %+d%%", Math.round(m.delta() * 100));
+        if (m.forced()) title += " (hard to avoid)";
+        java.util.List<String> lines = a.explain(m);
+        int bw = f.width(title);
+        for (String l : lines) bw = Math.max(bw, f.width(l));
+        int x0 = 46, y1 = h - 92, y0 = y1 - 14 - lines.size() * 10;
+        g.fill(x0 - 4, y0 - 4, x0 + bw + 4, y1, PANEL);
+        g.fill(x0 - 4, y0 - 4, x0 - 2, y1, color(m.kind()));
+        g.text(f, title, x0, y0, color(m.kind()), true);
+        for (int k = 0; k < lines.size(); k++) g.text(f, lines.get(k), x0, y0 + 13 + k * 10, TEXT, true);
     }
 
     private void drawHeader(GuiGraphicsExtractor g, Font f, int w, ReviewRecord r, ReviewAnalysis a) {
@@ -157,8 +207,8 @@ final class ReviewScreen extends Screen {
 
     /** Your keys this moment against the bot's choice for the same moment, and the nearest mark's note. */
     private void drawKeys(GuiGraphicsExtractor g, Font f, int w, int h, ReviewRecord r, ReviewAnalysis a, int i) {
-        int x0 = w - 132, y0 = h / 2 - 54;
-        g.fill(x0 - 4, y0 - 4, w - 2, y0 + 92, PANEL);
+        int x0 = w - 132, y0 = Math.max(30, (h - 84) / 2 - 56);
+        g.fill(x0 - 4, y0 - 4, w - 2, y0 + 104, PANEL);
         ReviewAnalysis.Suggestion s = a.suggestion(i);
         int next = Math.min(r.ticks.size() - 1, i + 1);
         ReviewRecord.Tick you = r.ticks.get(next);
@@ -177,13 +227,13 @@ final class ReviewScreen extends Screen {
         }
         ReviewRecord.Tick now = r.ticks.get(Math.max(0, i));
         g.text(f, "HP you " + hp(now.self.health) + "  bot " + hp(now.opp.health), x0, y0 + 70, MUTED, true);
-        ReviewAnalysis.Mark m = nearest(a, i);
-        if (m != null) {
-            String note = symbol(m.kind()) + " " + label(m.kind());
-            if (m.kind() != ReviewAnalysis.Kind.MISS) note += String.format(" %+d%%", Math.round(m.delta() * 100));
-            if (m.forced()) note += " (hard to avoid)";
-            g.text(f, note, x0, y0 + 81, color(m.kind()), true);
-        }
+        double now2 = ReviewClient.rangeNow(), yours = ReviewClient.rangeAtYourHit(), bots = ReviewClient.rangeAtBotHit();
+        g.text(f, String.format("Range now %.1f", now2), x0, y0 + 81, now2 <= 3.0 ? ON : MUTED, true);
+        g.text(f, "Your hit " + range(yours) + "  bot's " + range(bots), x0, y0 + 92, MUTED, true);
+    }
+
+    private static String range(double v) {
+        return Double.isNaN(v) ? "-" : String.format("%.1f", v);
     }
 
     private static String hp(float v) {
@@ -206,11 +256,6 @@ final class ReviewScreen extends Screen {
             g.text(f, names[i], x + 3, y + 3, lit[i] ? 0xFF101010 : 0xFFE0E0E0, false);
             x += bw + 2;
         }
-    }
-
-    private static ReviewAnalysis.Mark nearest(ReviewAnalysis a, int i) {
-        for (ReviewAnalysis.Mark m : a.marks()) if (i >= m.from() && i <= m.to()) return m;
-        return null;
     }
 
     private void drawGraph(GuiGraphicsExtractor g, Font f, ReviewAnalysis a, int n, int mouseX, int mouseY) {
@@ -248,16 +293,17 @@ final class ReviewScreen extends Screen {
     private void drawControls(GuiGraphicsExtractor g, Font f, int w, int y, int n) {
         int x = graphX0;
         x = button(g, f, x, y, "Start", () -> ReviewClient.seek(0));
-        x = button(g, f, x, y, "< mark", () -> stepMark(-1));
+        x = button(g, f, x, y, "<", () -> stepMark(-1));
         x = button(g, f, x, y, ReviewClient.playing ? "Pause" : "Play", ReviewScreen::togglePlay);
-        x = button(g, f, x, y, "mark >", () -> stepMark(1));
+        x = button(g, f, x, y, ">", () -> stepMark(1));
         x += 8;
         for (double s : SPEEDS) {
             String label = (s == 1 ? "1" : s == 0.5 ? "0.5" : "0.25") + "x";
             x = button(g, f, x, y, label, () -> ReviewClient.speed = s, ReviewClient.speed == s);
         }
         x += 8;
-        x = button(g, f, x, y, "Bot aim view", () -> ReviewClient.coachView = !ReviewClient.coachView, ReviewClient.coachView);
+        x = button(g, f, x, y, "Bot aim", () -> ReviewClient.coachView = !ReviewClient.coachView, ReviewClient.coachView);
+        x = button(g, f, x, y, "Stop at marks", () -> ReviewClient.stopAtMarks = !ReviewClient.stopAtMarks, ReviewClient.stopAtMarks);
         int closeX = w - 24 - f.width("Close") - 8;
         button(g, f, closeX, y, "Close", this::onClose);
         String time = clock(ReviewClient.cursor) + " / " + clock(Math.max(0, n - 1));
@@ -285,9 +331,9 @@ final class ReviewScreen extends Screen {
         ReviewClient.stopAt = -1;
     }
 
-    /** Jump a little before the moment and play up to it in slow motion, then hold there. */
+    /** Replay the whole moment from a second before it, in slow motion, holding at the key tick. */
     private static void playMark(ReviewAnalysis.Mark m) {
-        ReviewClient.seek(Math.max(0, m.index() - 30));
+        ReviewClient.seek(Math.max(0, Math.min(m.from(), m.index()) - 20));
         ReviewClient.speed = 0.5;
         ReviewClient.playing = true;
         ReviewClient.stopAt = m.index();
@@ -306,6 +352,13 @@ final class ReviewScreen extends Screen {
 
     private void scrubTo(double mx) {
         int n = ReviewClient.ticks();
+        for (ReviewAnalysis.Mark m : ReviewClient.analysis.marks()) {
+            if (Math.abs(tickX(m.index(), n) - mx) <= SNAP_PX) {
+                ReviewClient.seek(m.index());
+                ReviewClient.playing = false;
+                return;
+            }
+        }
         double f = (mx - graphX0) / (double) Math.max(1, graphX1 - graphX0 - 1);
         ReviewClient.seek(Math.max(0, Math.min(1, f)) * (n - 1));
         ReviewClient.playing = false;

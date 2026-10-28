@@ -19,7 +19,7 @@ abstract class ReviewCameraMixin {
     @Inject(method = "alignWithEntity", at = @At("TAIL"))
     private void holo$reviewEyes(float partialTicks, CallbackInfo ci) {
         if (!ReviewClient.active()) return;
-        ReviewClient.frame(Minecraft.getInstance());
+        ReviewClient.frame(Minecraft.getInstance(), partialTicks);
         double[] e = ReviewClient.eyes();
         if (e == null) return;
         setRotation((float) e[3], (float) e[4]);

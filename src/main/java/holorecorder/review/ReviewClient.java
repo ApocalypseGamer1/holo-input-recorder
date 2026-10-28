@@ -117,6 +117,7 @@ public final class ReviewClient {
         lastWhole = -1;
         coachYawOff = coachPitchOff = 0;
         oppUuid = parseUuid(record.oppUuid);
+        prepare();
         spawnGhost(mc.level);
         mc.gui.setScreen(new ReviewScreen());
     }
@@ -128,6 +129,7 @@ public final class ReviewClient {
         if (tellServer) send(new ReviewEndPayload(session));
         if (ghost != null && mc.level != null) mc.level.removeEntity(ghost.getId(), Entity.RemovalReason.DISCARDED);
         ghost = null;
+        if (mc.player != null) mc.player.hurtTime = 0;
         if (mc.gui.screen() instanceof ReviewScreen) mc.gui.setScreen(null);
     }
 
@@ -149,7 +151,7 @@ public final class ReviewClient {
         ghost = new RemotePlayer(level, new GameProfile(UUID.randomUUID(), name.isEmpty() ? "Bot" : name));
         ghost.setId(GHOST_ID);
         for (int i = 0; i < SLOTS.length; i++) ghost.setItemSlot(SLOTS[i], stack(record.oppItems[i]));
-        poseGhost(0);
+        poseGhost(0, 1f);
         level.addEntity(ghost);
     }
 
@@ -178,12 +180,62 @@ public final class ReviewClient {
 
     // ---------------------------------------------------------------- playback
 
+    private static final int SWING_TICKS = 6, HURT_TICKS = 10;
+    /** Bot copy motion worked out once from the recording, so any frame (scrub, slow motion) poses it the same way. */
+    private static float[] walkPos, walkSpeed, body;
+    private static int[] selfSwing, oppSwing, selfHurt, oppHurt;
+    static boolean stopAtMarks = true;
+
     public static int ticks() {
         return record == null ? 0 : record.ticks.size();
     }
 
-    /** Once per frame, before the camera is placed: moves the cursor and the bot copy. */
-    public static void frame(Minecraft mc) {
+    private static void prepare() {
+        int n = ticks();
+        walkPos = new float[n];
+        walkSpeed = new float[n];
+        body = new float[n];
+        selfSwing = new int[n];
+        oppSwing = new int[n];
+        selfHurt = new int[n];
+        oppHurt = new int[n];
+        float speed = 0, pos = 0, bodyYaw = record.ticks.get(0).opp.yaw;
+        int ss = -1000, os = -1000, sh = -1000, oh = -1000;
+        for (int i = 0; i < n; i++) {
+            ReviewRecord.Tick t = record.ticks.get(i);
+            double moved = 0, dx = 0, dz = 0;
+            if (i > 0) {
+                ReviewRecord.Fighter a = record.ticks.get(i - 1).opp;
+                dx = t.opp.x - a.x;
+                dz = t.opp.z - a.z;
+                moved = Math.hypot(dx, dz);
+            }
+            // Vanilla walk animation: speed eases toward 4x the distance moved, the limb phase adds it up.
+            speed += (Math.min(1f, (float) moved * 4f) - speed) * 0.4f;
+            pos += speed;
+            walkSpeed[i] = speed;
+            walkPos[i] = pos;
+            if (moved > 0.03) {
+                float dir = (float) Math.toDegrees(Math.atan2(-dx, dz));
+                if (Math.abs(ReviewAnalysis.wrap(dir - t.opp.yaw)) > 100) dir += 180;
+                bodyYaw += (float) ReviewAnalysis.wrap(dir - bodyYaw) * 0.3f;
+            }
+            float off = (float) ReviewAnalysis.wrap(t.opp.yaw - bodyYaw);
+            if (Math.abs(off) > 50) bodyYaw = t.opp.yaw - Math.signum(off) * 50;
+            body[i] = bodyYaw;
+            if (t.self.swingTime == -1) ss = i;
+            if (t.opp.swingTime == -1) os = i;
+            if (t.self.hurt) sh = i;
+            if (t.opp.hurt) oh = i;
+            selfSwing[i] = ss;
+            oppSwing[i] = os;
+            selfHurt[i] = sh;
+            oppHurt[i] = oh;
+        }
+    }
+
+    /** Once per frame, before the camera is placed: moves the cursor and poses the bot copy. */
+    public static void frame(Minecraft mc, float partial) {
         if (!active || record == null) return;
         long now = System.nanoTime();
         double dt = lastNanos == 0 ? 0 : Math.min(0.25, (now - lastNanos) / 1e9);
@@ -191,11 +243,21 @@ public final class ReviewClient {
         int n = ticks();
         if (playing) {
             double before = cursor;
-            cursor += dt * 20 * speed;
+            boolean slow = stopAtMarks && inMarkWindow(cursor);
+            cursor += dt * 20 * (slow ? Math.min(speed, 0.5) : speed);
             if (stopAt >= 0 && before <= stopAt && cursor >= stopAt) {
                 cursor = stopAt;
                 playing = false;
                 stopAt = -1;
+            }
+            if (stopAtMarks && playing) {
+                for (ReviewAnalysis.Mark m : analysis.marks()) {
+                    if (before < m.index() && cursor >= m.index()) {
+                        cursor = m.index();
+                        playing = false;
+                        break;
+                    }
+                }
             }
             if (cursor >= n - 1) {
                 cursor = n - 1;
@@ -204,10 +266,22 @@ public final class ReviewClient {
         }
         int whole = (int) Math.floor(cursor);
         if (whole > lastWhole && whole - lastWhole <= 3) {
-            for (int i = lastWhole + 1; i <= whole; i++) tickEffects(mc, i);
+            for (int i = lastWhole + 1; i <= whole; i++) {
+                ReviewRecord.Tick t = record.ticks.get(i);
+                if (t.self.swingTime == -1 && mc.player != null) swing(mc.player);
+                if (t.opp.swingTime == -1 && ghost != null) swing(ghost);
+            }
         }
         lastWhole = whole;
-        if (ghost != null) poseGhost(cursor);
+        if (ghost != null) {
+            poseGhost(cursor, partial);
+            ghost.hurtTime = hurtLeft(oppHurt);
+            ghost.hurtDuration = HURT_TICKS;
+        }
+        if (mc.player != null) {
+            mc.player.hurtTime = hurtLeft(selfHurt);
+            mc.player.hurtDuration = HURT_TICKS;
+        }
         ReviewAnalysis.Suggestion s = analysis.suggestion(whole);
         double yawOff = s == null ? 0 : s.yawDeg(), pitchOff = s == null ? 0 : s.pitchDeg();
         double k = 1 - Math.exp(-dt / 0.12);
@@ -215,36 +289,77 @@ public final class ReviewClient {
         coachPitchOff += (pitchOff - coachPitchOff) * k;
     }
 
-    private static void tickEffects(Minecraft mc, int i) {
-        ReviewRecord.Tick t = record.ticks.get(i);
-        if (t.self.swingTime == -1 && mc.player != null) mc.player.swing(InteractionHand.MAIN_HAND, false);
-        if (ghost == null) return;
-        if (t.opp.swingTime == -1) ghost.swing(InteractionHand.MAIN_HAND, false);
-        if (t.opp.hurt) ghost.hurtTime = 10;
-        if (i > 0) {
-            ReviewRecord.Fighter a = record.ticks.get(i - 1).opp;
-            float moved = (float) Math.hypot(t.opp.x - a.x, t.opp.z - a.z);
-            ghost.walkAnimation.update(Math.min(moved * 4, 1), 1f, 1f);
-        }
+    private static boolean inMarkWindow(double at) {
+        for (ReviewAnalysis.Mark m : analysis.marks()) if (at >= m.from() - 20 && at <= m.to()) return true;
+        return false;
     }
 
-    private static void poseGhost(double at) {
+    private static int hurtLeft(int[] last) {
+        double since = since(last);
+        return since < HURT_TICKS ? (int) Math.ceil(HURT_TICKS - since) : 0;
+    }
+
+    /** Ticks since the last event in {@code last} at the cursor (large when none). */
+    private static double since(int[] last) {
+        if (last == null) return 1e9;
+        int i = Math.max(0, Math.min(last.length - 1, (int) Math.floor(cursor)));
+        return last[i] < 0 ? 1e9 : cursor - last[i];
+    }
+
+    static double sinceYouHit() {
+        return since(oppHurt);
+    }
+
+    static double sinceYouGotHit() {
+        return since(selfHurt);
+    }
+
+    /** Hearts the player lost in the last hit at the cursor. */
+    static float lastHitHearts() {
+        if (selfHurt == null) return 0;
+        int i = selfHurt[Math.max(0, Math.min(selfHurt.length - 1, (int) Math.floor(cursor)))];
+        if (i <= 0) return 0;
+        return Math.max(0, record.ticks.get(i - 1).self.health - record.ticks.get(Math.min(ticks() - 1, i + 1)).self.health) / 2f;
+    }
+
+    /** Arm swing progress 0..1 for the player or the bot copy at the cursor; NaN for any other entity. */
+    public static float swingProgress(Object entity) {
+        if (!active || selfSwing == null) return Float.NaN;
+        int[] last = entity == ghost ? oppSwing : entity == Minecraft.getInstance().player ? selfSwing : null;
+        if (last == null) return Float.NaN;
+        double since = since(last);
+        return since < SWING_TICKS ? (float) (since / SWING_TICKS) : 0f;
+    }
+
+    private static void swing(net.minecraft.world.entity.LivingEntity e) {
+        e.swing(InteractionHand.MAIN_HAND, false);
+    }
+
+    private static void poseGhost(double at, float partial) {
         ReviewRecord.Fighter a = fighter(at, false), b = fighter(at + 1, false);
+        int i = Math.max(0, Math.min(ticks() - 1, (int) Math.floor(at))), j = Math.min(ticks() - 1, i + 1);
         double f = at - Math.floor(at);
         double x = lerp(f, a.x, b.x), y = lerp(f, a.y, b.y), z = lerp(f, a.z, b.z);
         float yaw = (float) (a.yaw + ReviewAnalysis.wrap(b.yaw - a.yaw) * f), pitch = (float) lerp(f, a.pitch, b.pitch);
+        float bodyYaw = (float) (body[i] + ReviewAnalysis.wrap(body[j] - body[i]) * f);
         ghost.setPos(x, y, z);
         ghost.xo = ghost.xOld = x;
         ghost.yo = ghost.yOld = y;
         ghost.zo = ghost.zOld = z;
-        ghost.setYRot(yaw);
-        ghost.yRotO = yaw;
+        ghost.setYRot(bodyYaw);
+        ghost.yRotO = bodyYaw;
         ghost.setXRot(pitch);
         ghost.xRotO = pitch;
         ghost.yHeadRot = ghost.yHeadRotO = yaw;
-        ghost.yBodyRot = ghost.yBodyRotO = yaw;
+        ghost.yBodyRot = ghost.yBodyRotO = bodyYaw;
         ghost.setShiftKeyDown(a.sneaking);
         ghost.setHealth(Math.max(0.5f, a.health));
+        float speed = (float) lerp(f, walkSpeed[i], walkSpeed[j]), pos = (float) lerp(f, walkPos[i], walkPos[j]);
+        // The renderer reads position - speed * (1 - partial); add that back so the legs sit exactly at the cursor.
+        holorecorder.mixin.WalkAnimationAccessor walk = (holorecorder.mixin.WalkAnimationAccessor) ghost.walkAnimation;
+        walk.holo$setSpeedOld(speed);
+        walk.holo$setSpeed(speed);
+        walk.holo$setPosition(pos + speed * (1 - partial));
     }
 
     private static ReviewRecord.Fighter fighter(double at, boolean self) {
@@ -270,6 +385,36 @@ public final class ReviewClient {
     /** Where the bot would aim now, relative to the camera, in degrees {yaw, pitch}. */
     static double[] coachOffset() {
         return coachView ? new double[] {0, 0} : new double[] {coachYawOff, coachPitchOff};
+    }
+
+    /** Reach distance: attacker's eyes to the nearest point of the target's body box, in blocks. */
+    static double reach(ReviewRecord.Fighter from, ReviewRecord.Fighter to) {
+        double ex = from.x, ey = from.y + (from.sneaking ? EYE_SNEAK : EYE), ez = from.z;
+        double dx = Math.max(Math.abs(ex - to.x) - 0.3, 0), dz = Math.max(Math.abs(ez - to.z) - 0.3, 0);
+        double dy = ey < to.y ? to.y - ey : ey > to.y + 1.8 ? ey - to.y - 1.8 : 0;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    static double rangeNow() {
+        ReviewRecord.Tick t = record.ticks.get(Math.max(0, Math.min(ticks() - 1, (int) Math.floor(cursor))));
+        return reach(t.self, t.opp);
+    }
+
+    /** Range when your last hit (or the bot's last hit on you) landed, NaN before the first one. */
+    static double rangeAtYourHit() {
+        return rangeAt(oppHurt, true);
+    }
+
+    static double rangeAtBotHit() {
+        return rangeAt(selfHurt, false);
+    }
+
+    private static double rangeAt(int[] last, boolean you) {
+        if (last == null) return Double.NaN;
+        int i = last[Math.max(0, Math.min(last.length - 1, (int) Math.floor(cursor)))];
+        if (i < 0) return Double.NaN;
+        ReviewRecord.Tick t = record.ticks.get(Math.max(0, i - 1));
+        return you ? reach(t.self, t.opp) : reach(t.opp, t.self);
     }
 
     static void seek(double tick) {
