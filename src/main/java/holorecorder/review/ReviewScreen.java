@@ -224,22 +224,23 @@ final class ReviewScreen extends Screen {
         if (spear) {
             int end = m.end() + 1;
             moves.add(Tr.t("You: {0}", sequence(within(ReviewClient.spearChips(ReviewClient.record, true), start, end), Tr.t("no moves"))));
-            moves.add("Bot: " + sequence(within(ReviewClient.spearChips(ReviewClient.record, false), start, end), Tr.t("no moves")));
+            moves.add(Tr.t("Bot: {0}", sequence(within(ReviewClient.spearChips(ReviewClient.record, false), start, end), Tr.t("no moves"))));
         } else if (m.kind() != ReviewAnalysis.Kind.BEST) {
             // Your round cut like the clip, so the same ticks get the same move names on both lines.
             int cut = sb != null ? sb.ticks.size() : ReviewClient.CLIP_TICKS;
             moves.add(Tr.t("You: {0}", sequence(within(ReviewClient.chips(ReviewClient.slice(ReviewClient.record, start, cut)), 0, len))));
         }
+        String coachText = null;
         if (m.kind() != ReviewAnalysis.Kind.BEST) {
-            if (sb != null) moves.add(coachTag + ": " + sequence(within(ReviewClient.chips(sb), 0, len), spear ? Tr.t("no moves") : Tr.t("no hits")));
+            if (sb != null) moves.add(coachText = Tr.t("{0}: {1}", coachTag, sequence(within(ReviewClient.chips(sb), 0, len), spear ? Tr.t("no moves") : Tr.t("no hits"))));
             else if (clip && !ReviewClient.noClipAt(start)) {
-                moves.add(ReviewClient.fetching(start) ? Tr.t("{0}: playing it out...", coachTag) : coachTag + ": ...");
+                moves.add(coachText = ReviewClient.fetching(start) ? Tr.t("{0}: playing it out...", coachTag) : Tr.t("{0}: {1}", coachTag, "..."));
                 ReviewClient.prefetch(start);
             }
         }
         java.util.List<String> lines = new ArrayList<>(a.explain(m, moves));
         int coachLine = -1;
-        for (int k = 0; k < lines.size(); k++) if (lines.get(k).startsWith(coachTag + ":")) coachLine = k;
+        for (int k = 0; k < lines.size(); k++) if (lines.get(k).equals(coachText)) coachLine = k;
         int x0 = 46, max = w - 144 - x0;
         for (int k = 0; k < lines.size(); k++) {
             if (f.width(lines.get(k)) > max) lines.set(k, f.plainSubstrByWidth(lines.get(k), max - f.width("...")) + "...");
@@ -354,7 +355,7 @@ final class ReviewScreen extends Screen {
         g.text(f, who + "  " + hp(p.health) + (s.absorption > 0 ? " +" + hp(s.absorption) : ""), x, y, colour, true);
         String state = s.gliding ? Tr.t("gliding") : s.use == 4 ? Tr.t("shield up") : s.use != 0 ? Tr.t("using {0}", itemName(s.use).toLowerCase(java.util.Locale.ROOT))
                 : s.fallDistance >= 1.5f ? Tr.t("falling {0}", String.format("%.0f", s.fallDistance)) : "";
-        g.text(f, itemName(s.main) + (state.isEmpty() ? "" : ", " + state), x, y + 11, ON, true);
+        g.text(f, state.isEmpty() ? itemName(s.main) : Tr.t("{0}, {1}", itemName(s.main), state), x, y + 11, ON, true);
         g.text(f, Tr.t("Totems {0}  Pearls {1}", s.totems, s.pearls), x, y + 22, MUTED, true);
         g.text(f, Tr.t("Charges {0}  Apples {1}", s.charges, s.apples), x, y + 33, MUTED, true);
         String buffs = (s.strength ? Tr.t("Strength") + " " : "") + (s.speed ? Tr.t("Speed") + " " : "") + (s.pearlCooldown > 0 ? Tr.t("pearl wait {0}s", Math.round(s.pearlCooldown / 2.0) / 10.0) : "");
@@ -394,7 +395,10 @@ final class ReviewScreen extends Screen {
 
     private static String turnText(double yaw, double pitch) {
         String t = Math.abs(yaw) < 1 ? "" : yaw > 0 ? Tr.t("turn right {0}°", Math.round(Math.abs(yaw))) : Tr.t("turn left {0}°", Math.round(Math.abs(yaw)));
-        if (Math.abs(pitch) >= 1) t += (t.isEmpty() ? "" : ", ") + (pitch > 0 ? Tr.t("down {0}°", Math.round(Math.abs(pitch))) : Tr.t("up {0}°", Math.round(Math.abs(pitch))));
+        if (Math.abs(pitch) >= 1) {
+            String p = pitch > 0 ? Tr.t("down {0}°", Math.round(Math.abs(pitch))) : Tr.t("up {0}°", Math.round(Math.abs(pitch)));
+            t = t.isEmpty() ? p : Tr.t("{0}, {1}", t, p);
+        }
         return t.isEmpty() ? Tr.t("hold aim") : t;
     }
 
@@ -459,7 +463,7 @@ final class ReviewScreen extends Screen {
     private void drawMoveNow(GuiGraphicsExtractor g, Font f, int w, int h, boolean bot) {
         ReviewClient.Chip m = ReviewClient.moveNow();
         if (m == null) return;
-        String text = bot ? ReviewClient.botName() + ": " + m.name() : Tr.t("You: {0}", m.name());
+        String text = bot ? Tr.t("{0}: {1}", ReviewClient.botName(), m.name()) : Tr.t("You: {0}", m.name());
         int tw = Math.max(f.width(text), f.width(m.detail())), y = ReviewClient.inClip() ? h - 88 : h / 2 + 12, y1 = m.detail().isEmpty() ? y + 10 : y + 20;
         g.fill(w / 2 - tw / 2 - 3, y - 2, w / 2 + tw / 2 + 3, y1, PANEL);
         g.centeredText(f, text, w / 2, y, m.weak() ? 0xFFF7C631 : bot ? COACH : ON);
@@ -474,7 +478,7 @@ final class ReviewScreen extends Screen {
             {Tr.t("Hits taken"), String.valueOf((int) you[1]), String.valueOf((int) bot[1])},
             {Tr.t("Hearts lost"), String.format("%.1f", you[2]), String.format("%.1f", bot[2])},
         };
-        String youMoves = Tr.t("You: {0}", sequence(ReviewClient.movesOf(false))), botMoves = ReviewClient.botName() + ": " + sequence(ReviewClient.movesOf(true));
+        String youMoves = Tr.t("You: {0}", sequence(ReviewClient.movesOf(false))), botMoves = Tr.t("{0}: {1}", ReviewClient.botName(), sequence(ReviewClient.movesOf(true)));
         int label = f.width(Tr.t("Same moment"));
         for (String[] r : rows) label = Math.max(label, f.width(r[0]));
         int x0 = 46, colA = x0 + Math.max(70, label + 6), colB = colA + 40, y1 = h - 92, lines = rows.length + 3;
@@ -527,7 +531,7 @@ final class ReviewScreen extends Screen {
             }
         }
         List<String> parts = new ArrayList<>();
-        for (int k = 0; k < Math.min(3, names.size()); k++) parts.add(counts.get(k) > 1 ? names.get(k) + " x" + counts.get(k) : names.get(k));
+        for (int k = 0; k < Math.min(3, names.size()); k++) parts.add(counts.get(k) > 1 ? Tr.t("{0} x{1}", names.get(k), counts.get(k)) : names.get(k));
         if (names.size() > 3) parts.add("...");
         return parts.isEmpty() ? none : String.join(", ", parts);
     }
@@ -535,7 +539,7 @@ final class ReviewScreen extends Screen {
     private void drawClipControls(GuiGraphicsExtractor g, Font f, int w, int y, int n) {
         int x = graphX0, closeX = w - 24 - f.width(Tr.t("Close")) - 8;
         // Small screens: short labels, then no speed buttons, so nothing runs under Close.
-        String[] full = {Tr.t("Back to your round"), Tr.t("Your play"), Tr.t("{0}'s play", ReviewClient.botName()), Tr.t("Start")}, small = {Tr.t("Back"), Tr.t("You"), ReviewClient.record.spear() ? "Bot" : "Swordbot", Tr.t("Start")};
+        String[] full = {Tr.t("Back to your round"), Tr.t("Your play"), Tr.t("{0}'s play", ReviewClient.botName()), Tr.t("Start")}, small = {Tr.t("Back"), Tr.t("You"), ReviewClient.record.spear() ? Tr.t("Bot") : "Swordbot", Tr.t("Start")};
         int speedsW = 0;
         for (double s : SPEEDS) speedsW += f.width(speedLabel(s)) + 11;
         boolean shortLabels = x + rowWidth(f, full) + 24 + speedsW > closeX - 4;
