@@ -11,7 +11,9 @@
     "ReviewCameraMixin",
     "ReviewRenderMixin",
     "ReviewEntityMixin",
-    "ReviewSkinMixin"
+    "ReviewSkinMixin",
+    "WalkAnimationAccessor",
+    "ReviewSwingMixin"
   ],
   "injectors": {
     "defaultRequire": 1

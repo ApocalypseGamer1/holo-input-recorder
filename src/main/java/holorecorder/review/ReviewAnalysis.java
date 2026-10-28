@@ -5,6 +5,7 @@ import holorecorder.review.ReviewRecord.Tick;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Chess.com-style review of one {@link ReviewRecord}: the win bar the player saw, what the coach would have played, how
@@ -25,6 +26,7 @@ public final class ReviewAnalysis {
     public static final double DROP_MIN = 0.05, MISTAKE_MIN = 0.10, BLUNDER_MIN = 0.20, RISE_MIN = 0.10;
     public static final double FORCED_AGREEMENT = 0.85, BEST_AGREEMENT = 0.75, MISS_ATTACK_P = 0.7, REACH = 3.0;
     public static final int SWORD_RECHARGE = 12, HURT_TICKS = 9, MISS_SPACING = 40;
+    public static final int EXPLAIN_LEAD = 20, EXPLAIN_LINES = 5;
 
     private static final int MOVE = 0, JUMP = 1, SPRINT = 2, ATTACK = 3, YAW = 4, PITCH = 5, SNEAK = 6, BRANCHES = 7;
     private static final int K_FWD = 1, K_BACK = 2, K_LEFT = 4, K_RIGHT = 8, K_JUMP = 16, K_SNEAK = 32, K_SPRINT = 64;
@@ -97,6 +99,34 @@ public final class ReviewAnalysis {
         int c = 0;
         for (Mark m : marks) if (m.kind() == k) c++;
         return c;
+    }
+
+    /** The mark whose replay window (from {@link #EXPLAIN_LEAD} ticks before {@code from}, to {@code to}) holds {@code tick}; the nearest index wins. */
+    public Mark markAt(int tick) {
+        Mark best = null;
+        for (Mark m : marks) {
+            if (tick < Math.max(0, m.from() - EXPLAIN_LEAD) || tick > m.to()) continue;
+            if (best == null || Math.abs(m.index() - tick) < Math.abs(best.index() - tick)) best = m;
+        }
+        return best;
+    }
+
+    /** Up to {@link #EXPLAIN_LINES} short plain-English lines on why the mark happened, most important first. */
+    public List<String> explain(Mark m) {
+        List<String> out = new ArrayList<>();
+        int lo = Math.max(0, m.from() - EXPLAIN_LEAD), hi = Math.min(n - 1, m.to());
+        if (lo <= hi) {
+            explainHits(out, m, lo, hi);
+            int runs = missRuns(lo, hi);
+            if (runs > 0) out.add("You missed " + runs + (runs == 1 ? " hit" : " hits") + " you could have made");
+            explainMoves(out, lo, hi);
+            double aim = meanAimError(lo, hi);
+            if (aim > 25.0) out.add("Your aim was off the bot by " + Math.round(aim) + "\u00b0");
+            double from = distance(record.ticks.get(lo)), to = distance(record.ticks.get(hi));
+            if (Math.abs(to - from) >= 1.5) out.add(String.format(Locale.ROOT, "Distance went from %.1f to %.1f blocks", from, to));
+        }
+        if (out.isEmpty()) out.add("No clear cause: small mistakes added up");
+        return List.copyOf(out.subList(0, Math.min(out.size(), EXPLAIN_LINES)));
     }
 
     // ---- helpers ----
@@ -316,5 +346,89 @@ public final class ReviewAnalysis {
             if (record.ticks.get(j).opp.hurt) return false;
         }
         return true;
+    }
+
+    private static String times(int k) {
+        return k + (k == 1 ? " time" : " times");
+    }
+
+    // Bot hits go first unless the player won the trade on a BEST mark.
+    private void explainHits(List<String> out, Mark m, int lo, int hi) {
+        int took = 0, landed = 0;
+        double lost = 0;
+        for (int i = lo; i <= hi; i++) {
+            Tick t = record.ticks.get(i);
+            if (t.self.hurt) took++;
+            if (t.opp.hurt) landed++;
+            if (i > 0) lost += Math.max(0, record.ticks.get(i - 1).self.health - t.self.health);
+        }
+        String bot = took == 0 ? null : "The bot hit you " + times(took)
+                + (lost > 0 ? String.format(Locale.ROOT, " (-%.1f hearts)", lost / 2.0) : "");
+        String you = landed == 0 ? null : "You hit the bot " + times(landed);
+        boolean botFirst = took > 0 && (landed == 0 || m.kind() != Kind.BEST);
+        if (botFirst && bot != null) out.add(bot);
+        if (you != null) out.add(you);
+        if (!botFirst && bot != null) out.add(bot);
+    }
+
+    // Runs of consecutive miss candidates, one per run.
+    private int missRuns(int lo, int hi) {
+        int runs = 0;
+        boolean prev = false;
+        for (int i = lo; i <= hi; i++) {
+            boolean q = missCandidate(i);
+            if (q && !prev) runs++;
+            prev = q;
+        }
+        return runs;
+    }
+
+    // Player keys are read at i+1 for the coach's reply at i. Shares are of the ticks with coach data, except sprint and "jumped too much".
+    private void explainMoves(List<String> out, int lo, int hi) {
+        int c = 0, back = 0, noW = 0, wantSprint = 0, noSprint = 0, coachNoJump = 0, jumped = 0, missedJump = 0;
+        for (int i = lo; i <= Math.min(hi, n - 2); i++) {
+            Suggestion s = suggestions[i];
+            if (s == null) continue;
+            int keys = record.ticks.get(i + 1).keys;
+            c++;
+            if (s.forward()) {
+                if ((keys & K_BACK) != 0) back++;
+                if ((keys & K_FWD) == 0) noW++;
+            }
+            if (s.sprint()) {
+                wantSprint++;
+                if ((keys & K_SPRINT) == 0) noSprint++;
+            }
+            if (s.jump()) {
+                if ((keys & K_JUMP) == 0) missedJump++;
+            } else {
+                coachNoJump++;
+                if ((keys & K_JUMP) != 0) jumped++;
+            }
+        }
+        if (c == 0) return;
+        if (back >= 0.4 * c) out.add("You backed off; the bot would push in");
+        else if (noW >= 0.4 * c) out.add("You stopped moving in");
+        if (wantSprint > 0 && noSprint >= 0.5 * wantSprint) out.add("You were not sprinting");
+        if (coachNoJump > 0 && jumped >= 0.3 * coachNoJump) out.add("You jumped too much");
+        if (missedJump >= 0.3 * c) out.add("The bot would jump here");
+    }
+
+    /** Mean degrees between the player's look yaw and the direction to the bot; ticks on top of the bot are skipped. */
+    private double meanAimError(int lo, int hi) {
+        double sum = 0;
+        int cnt = 0;
+        for (int i = lo; i <= hi; i++) {
+            Tick t = record.ticks.get(i);
+            double dx = t.opp.x - t.self.x, dz = t.opp.z - t.self.z;
+            if (Math.hypot(dx, dz) < 0.1) continue;
+            sum += Math.abs(wrap(t.self.yaw - Math.toDegrees(Math.atan2(-dx, dz))));
+            cnt++;
+        }
+        return cnt == 0 ? 0 : sum / cnt;
+    }
+
+    private static double distance(Tick t) {
+        return Math.hypot(t.opp.x - t.self.x, t.opp.z - t.self.z);
     }
 }
