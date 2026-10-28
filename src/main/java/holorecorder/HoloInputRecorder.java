@@ -152,7 +152,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
         RawInputCapture.clear();
         RawInputCapture.arm(false, HoloInputRecorder::isBoundKey);
         if (client.player != null) {
-            String text = active ? "Holo input capture active for this round." : "Holo input capture saved.";
+            String text = active ? Tr.t("Holo input capture active for this round.") : Tr.t("Holo input capture saved.");
             client.player.sendOverlayMessage(Component.literal(text));
         }
     }

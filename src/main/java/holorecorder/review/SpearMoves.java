@@ -1,5 +1,6 @@
 package holorecorder.review;
 
+import holorecorder.Tr;
 import holorecorder.review.ReviewRecord.Fighter;
 import holorecorder.review.ReviewRecord.Spear;
 import holorecorder.review.ReviewRecord.Tick;
@@ -35,38 +36,38 @@ public final class SpearMoves {
     public record Move(Kind kind, int start, int end, boolean swapped, float fall) {
         public String name() {
             String n = switch (kind) {
-                case MACE_SMASH -> "Mace smash";
-                case MACE_HIT -> "Mace hit";
-                case SPEAR_CHARGE -> "Spear charge";
-                case SPEAR_LUNGE -> "Spear lunge";
-                case SPEAR_JAB -> "Spear jab";
-                case SWORD_HIT -> "Sword hit";
-                case AXE_HIT -> "Axe hit";
-                case SHIELD_BREAK -> "Shield break";
-                case HIT -> "Hit";
-                case WIND_LAUNCH -> "Wind charge launch";
-                case WIND_CHARGE -> "Wind charge";
-                case PEARL -> "Pearl";
-                case TOTEM_POP -> "Totem pop";
-                case GAPPLE -> "Golden apple";
-                case STRENGTH -> "Strength potion";
-                case SPEED -> "Speed potion";
-                case ELYTRA -> "Elytra glide";
-                case SHIELD_UP -> "Shield up";
+                case MACE_SMASH -> Tr.t("Mace smash");
+                case MACE_HIT -> Tr.t("Mace hit");
+                case SPEAR_CHARGE -> Tr.t("Spear charge");
+                case SPEAR_LUNGE -> Tr.t("Spear lunge");
+                case SPEAR_JAB -> Tr.t("Spear jab");
+                case SWORD_HIT -> Tr.t("Sword hit");
+                case AXE_HIT -> Tr.t("Axe hit");
+                case SHIELD_BREAK -> Tr.t("Shield break");
+                case HIT -> Tr.t("Hit");
+                case WIND_LAUNCH -> Tr.t("Wind charge launch");
+                case WIND_CHARGE -> Tr.t("Wind charge");
+                case PEARL -> Tr.t("Pearl");
+                case TOTEM_POP -> Tr.t("Totem pop");
+                case GAPPLE -> Tr.t("Golden apple");
+                case STRENGTH -> Tr.t("Strength potion");
+                case SPEED -> Tr.t("Speed potion");
+                case ELYTRA -> Tr.t("Elytra glide");
+                case SHIELD_UP -> Tr.t("Shield up");
             };
-            return swapped ? "Swap + " + Character.toLowerCase(n.charAt(0)) + n.substring(1) : n;
+            return swapped ? Tr.t("Swap + {0}", Character.toLowerCase(n.charAt(0)) + n.substring(1)) : n;
         }
 
         public String detail() {
             return switch (kind) {
-                case MACE_SMASH -> String.format(Locale.ROOT, "after a %.0f block fall", fall);
-                case SPEAR_CHARGE -> "hit while charging the spear";
-                case SPEAR_LUNGE -> "spear hit at speed";
-                case SHIELD_BREAK -> "axe hit that disabled the shield";
-                case WIND_LAUNCH -> "launched up by a wind charge";
-                case PEARL -> "thrown, then the teleport";
-                case TOTEM_POP -> "saved from death by a totem";
-                default -> swapped ? "switched item just before the hit" : "";
+                case MACE_SMASH -> Tr.t("after a {0} block fall", String.format(Locale.ROOT, "%.0f", fall));
+                case SPEAR_CHARGE -> Tr.t("hit while charging the spear");
+                case SPEAR_LUNGE -> Tr.t("spear hit at speed");
+                case SHIELD_BREAK -> Tr.t("axe hit that disabled the shield");
+                case WIND_LAUNCH -> Tr.t("launched up by a wind charge");
+                case PEARL -> Tr.t("thrown, then the teleport");
+                case TOTEM_POP -> Tr.t("saved from death by a totem");
+                default -> swapped ? Tr.t("switched item just before the hit") : "";
             };
         }
     }

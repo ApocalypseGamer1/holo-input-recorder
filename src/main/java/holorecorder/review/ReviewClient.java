@@ -1,6 +1,7 @@
 package holorecorder.review;
 
 import com.mojang.authlib.GameProfile;
+import holorecorder.Tr;
 import holorecorder.protocol.ReviewClipPayload;
 import holorecorder.protocol.ReviewClipRequestPayload;
 import holorecorder.protocol.ReviewDataPayload;
@@ -109,7 +110,7 @@ public final class ReviewClient {
             record = ReviewRecord.fromBytes(all.toByteArray());
         } catch (IOException e) {
             LOG.warn("holorec: round review not readable: {}", e.toString());
-            if (mc.player != null) mc.player.sendSystemMessage(Component.literal("This round review could not be opened. Update the Holoplayer mod."));
+            if (mc.player != null) mc.player.sendSystemMessage(Component.literal(Tr.t("This round review could not be opened. Update the Holoplayer mod.")));
             send(new ReviewEndPayload(session));
             return;
         }
@@ -192,7 +193,7 @@ public final class ReviewClient {
     /** Who plays your side in a clip: the Spearmace model in a Spearmace round, else Swordbot. */
     static String botName() {
         ReviewRecord r = round != null ? round : record;
-        return r != null && r.spear() ? "Spearmace bot" : "Swordbot";
+        return r != null && r.spear() ? Tr.t("Spearmace bot") : "Swordbot";
     }
 
     /** The server can show the bot's play from a moment of this round. */
@@ -207,7 +208,7 @@ public final class ReviewClient {
 
     /** What to tell the player about the last request, or null. */
     static String clipNote() {
-        if (clipPending()) return botName() + " is playing it...";
+        if (clipPending()) return Tr.t("{0} is playing it...", botName());
         return clipNote != null && System.nanoTime() - clipNoteAt < 6_000_000_000L ? clipNote : null;
     }
 
@@ -275,12 +276,12 @@ public final class ReviewClient {
             clip = ReviewRecord.fromBytes(p.data());
         } catch (IOException e) {
             LOG.warn("holorec: review clip not readable: {}", e.toString());
-            note(botName() + "'s play could not be opened. Update the Holoplayer mod.");
+            note(Tr.t("{0}'s play could not be opened. Update the Holoplayer mod.", botName()));
             return;
         }
         if (clip.ticks.size() < 2) {
             noClip.add(p.tick());
-            if (!silent) note(botName() + "'s play stopped at once. Try another moment.");
+            if (!silent) note(Tr.t("{0}'s play stopped at once. Try another moment.", botName()));
             return;
         }
         clips.put(p.tick(), clip);
@@ -289,11 +290,11 @@ public final class ReviewClient {
 
     static String clipError(int status) {
         return switch (status) {
-            case ReviewClipPayload.BUSY -> botName() + " is still busy. Try again.";
-            case ReviewClipPayload.NO_BOT -> "The bot is gone, so " + botName() + " cannot play here.";
-            case ReviewClipPayload.TOO_LATE -> "Too near the end of the round. Pick an earlier moment.";
-            case ReviewClipPayload.FAILED -> botName() + "'s play stopped. Try again.";
-            default -> botName() + "'s play is not available for this round.";
+            case ReviewClipPayload.BUSY -> Tr.t("{0} is still busy. Try again.", botName());
+            case ReviewClipPayload.NO_BOT -> Tr.t("The bot is gone, so {0} cannot play here.", botName());
+            case ReviewClipPayload.TOO_LATE -> Tr.t("Too near the end of the round. Pick an earlier moment.");
+            case ReviewClipPayload.FAILED -> Tr.t("{0}'s play stopped. Try again.", botName());
+            default -> Tr.t("{0}'s play is not available for this round.", botName());
         };
     }
 
@@ -373,7 +374,7 @@ public final class ReviewClient {
         if (model != null) {
             for (ReviewMoveModel.Hit h : model.of(r)) {
                 ReviewMoveModel.Group g = h.group();
-                out.add(new Chip(sprintHits.contains(h.hit()) ? g.sprintName() : g.name(), g.description(), g.weak(), h.hit(), h.hit()));
+                out.add(new Chip(Tr.t(sprintHits.contains(h.hit()) ? g.sprintName() : g.name()), Tr.t(g.description()), g.weak(), h.hit(), h.hit()));
                 grouped.add(h.hit());
             }
         }
@@ -403,16 +404,21 @@ public final class ReviewClient {
 
     static String moveName(ReviewMoves.Kind k) {
         return switch (k) {
-            case CRIT -> "Crit";
-            case SPRINT_HIT -> "Sprint hit";
-            case JUMP_HIT -> "Jump hit";
-            case WEAK_HIT -> "Weak hit (not charged)";
-            case JUMP_RESET -> "Jump reset";
-            case W_TAP -> "W-tap";
-            case S_TAP -> "S-tap";
-            case STRAFE_LEFT -> "Strafe left";
-            case STRAFE_RIGHT -> "Strafe right";
+            case CRIT -> Tr.t("Crit");
+            case SPRINT_HIT -> Tr.t("Sprint hit");
+            case JUMP_HIT -> Tr.t("Jump hit");
+            case WEAK_HIT -> Tr.t("Weak hit") + weakSuffix();
+            case JUMP_RESET -> Tr.t("Jump reset");
+            case W_TAP -> Tr.t("W-tap");
+            case S_TAP -> Tr.t("S-tap");
+            case STRAFE_LEFT -> Tr.t("Strafe left");
+            case STRAFE_RIGHT -> Tr.t("Strafe right");
         };
+    }
+
+    /** The tail of the weak hit name; the move lists cut it off to count repeats under one name. */
+    static String weakSuffix() {
+        return Tr.t(" (not charged)");
     }
 
     /** In a clip: ticks (up to 20) since a hit you took in the round that Swordbot did not take at that moment (large when none). */
@@ -550,7 +556,7 @@ public final class ReviewClient {
         double dt = lastNanos == 0 ? 0 : Math.min(0.25, (now - lastNanos) / 1e9);
         lastNanos = now;
         if (clipAsked != 0 && now - clipAsked > 10_000_000_000L) {
-            if (!clipSilent) note("No answer from the server. Try again.");
+            if (!clipSilent) note(Tr.t("No answer from the server. Try again."));
             clipAsked = 0;
             clipSilent = false;
         }

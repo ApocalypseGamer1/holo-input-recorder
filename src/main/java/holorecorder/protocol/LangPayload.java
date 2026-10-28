@@ -6,7 +6,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-/** The language the server uses for this player ("en", "es"): the one they picked there, else their game's. */
+/** The language the player picked in the server menu ("en", "es"), or "" for "use your game's language". */
 public record LangPayload(String code) implements CustomPacketPayload {
     public static final Type<LangPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath("holoserver", "lang"));
     public static final StreamCodec<RegistryFriendlyByteBuf, LangPayload> CODEC = StreamCodec.of(
