@@ -89,6 +89,15 @@ public final class ReviewRecord {
         return new String[] {"", "", "", "", "", ""};
     }
 
+    /** A swing starts at tick {@code i}: swinging now, and not before or the swing restarted (live players show -1, bots 0). */
+    public boolean swingStart(int i, boolean self) {
+        Fighter now = self ? ticks.get(i).self : ticks.get(i).opp;
+        if (now.swingTime == NOT_SWINGING) return false;
+        if (i == 0) return true;
+        Fighter before = self ? ticks.get(i - 1).self : ticks.get(i - 1).opp;
+        return before.swingTime == NOT_SWINGING || now.swingTime < before.swingTime;
+    }
+
     public int coachWidth() {
         int n = 0;
         for (int b : branches) n += b;

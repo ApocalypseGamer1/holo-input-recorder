@@ -160,7 +160,7 @@ public final class ReviewAnalysis {
         int k = b.keys;
         String you = keys((k & K_FWD) != 0 && (k & K_BACK) == 0, (k & K_LEFT) != 0 && (k & K_RIGHT) == 0,
                 (k & K_BACK) != 0 && (k & K_FWD) == 0, (k & K_RIGHT) != 0 && (k & K_LEFT) == 0,
-                (k & K_JUMP) != 0, (k & K_SPRINT) != 0, b.self.swingTime == -1);
+                (k & K_JUMP) != 0, (k & K_SPRINT) != 0, record.swingStart(i + 1, true));
         String bot = keys(s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5);
         double turn = wrap(s.yawDeg() - wrap(b.self.yaw - a.self.yaw));
         String time = String.format(Locale.ROOT, "%d:%04.1f", i / 1200, (i % 1200) / 20.0);
@@ -315,7 +315,7 @@ public final class ReviewAnalysis {
             humanMove(b.keys),
             (b.keys & K_JUMP) != 0 ? 1 : 0,
             (b.keys & K_SPRINT) != 0 ? 1 : 0,
-            b.self.swingTime == -1 ? 1 : 0,
+            r.swingStart(i + 1, true) ? 1 : 0,
             nearestBucket(r.yawBuckets, wrap(b.self.yaw - a.self.yaw)),
             nearestBucket(r.pitchBuckets, b.self.pitch - a.self.pitch),
             (b.keys & K_SNEAK) != 0 ? 1 : 0};
@@ -419,7 +419,7 @@ public final class ReviewAnalysis {
         if (!inReach(t.self, t.opp)) return false;
         // Only a full-strength hit counts: the sword is recharged and the bot is out of its hurt time.
         for (int j = Math.max(0, i - SWORD_RECHARGE); j <= Math.min(n - 1, i + 3); j++) {
-            if (record.ticks.get(j).self.swingTime == -1) return false;
+            if (record.swingStart(j, true)) return false;
         }
         for (int j = Math.max(0, i - HURT_TICKS); j <= i; j++) {
             if (record.ticks.get(j).opp.hurt) return false;

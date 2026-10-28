@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -59,6 +60,10 @@ public final class ReviewClient {
     private static ReviewRecord round;
     private static ReviewAnalysis roundAnalysis;
     private static double roundCursor;
+    /** The same stretch twice: your play (from the round) and Swordbot's; the clip shows yours first, then Swordbot's. */
+    private static ReviewRecord yours, swordbot;
+    static boolean showingSwordbot;
+    private static List<ReviewMoves.Move> moves = List.of();
     static int clipFrom = -1;
     private static String clipNote;
     private static long clipAsked, clipNoteAt;
@@ -161,6 +166,8 @@ public final class ReviewClient {
     private static void clearClip() {
         round = null;
         roundAnalysis = null;
+        yours = swordbot = null;
+        showingSwordbot = false;
         clipFrom = -1;
         clipNote = null;
         clipAsked = 0;
@@ -237,9 +244,9 @@ public final class ReviewClient {
             roundCursor = cursor;
         }
         clipFrom = from;
-        record = clip;
-        analysis = ReviewAnalysis.of(clip);
-        prepare();
+        swordbot = clip;
+        yours = slice(round, from, clip.ticks.size());
+        show(false);
         seek(0);
         lastWhole = -1;
         speed = 0.5;
@@ -247,9 +254,73 @@ public final class ReviewClient {
         coachView = false;
     }
 
+    /** Ticks {@code from .. from + count - 1} of a round as a record of their own (no coach data). */
+    static ReviewRecord slice(ReviewRecord r, int from, int count) {
+        ReviewRecord s = new ReviewRecord();
+        s.oppName = r.oppName;
+        s.oppUuid = r.oppUuid;
+        s.selfItems = r.selfItems;
+        s.oppItems = r.oppItems;
+        s.ticks.addAll(r.ticks.subList(Math.min(from, r.ticks.size()), Math.min(r.ticks.size(), from + count)));
+        return s;
+    }
+
+    /** In a clip: show Swordbot's play or yours at the same moment. */
+    static void show(boolean swordbotSide) {
+        if (!inClip()) return;
+        showingSwordbot = swordbotSide;
+        record = swordbotSide ? swordbot : yours;
+        analysis = ReviewAnalysis.of(record);
+        prepare();
+        cursor = Math.max(0, Math.min(ticks() - 1, cursor));
+        lastWhole = (int) Math.floor(cursor);
+    }
+
+    /** One side's numbers over the whole clip: {hits landed, hits taken, hearts lost}. */
+    static double[] tally(boolean swordbotSide) {
+        ReviewRecord r = swordbotSide ? swordbot : yours;
+        double landed = 0, taken = 0, lost = 0;
+        for (int i = 0; i < r.ticks.size(); i++) {
+            ReviewRecord.Tick t = r.ticks.get(i);
+            if (t.opp.hurt) landed++;
+            if (t.self.hurt) taken++;
+            if (i > 0) lost += Math.max(0, r.ticks.get(i - 1).self.health - t.self.health) / 2.0;
+        }
+        return new double[] {landed, taken, lost};
+    }
+
+    static List<ReviewMoves.Move> movesOf(boolean swordbotSide) {
+        return ReviewMoves.of(swordbotSide ? swordbot : yours, true);
+    }
+
+    /** The move the shown fighter is making at the cursor (shown a little past its end), or null. Strafes are left out. */
+    static ReviewMoves.Move moveNow() {
+        int c = (int) Math.floor(cursor);
+        ReviewMoves.Move best = null;
+        for (ReviewMoves.Move m : moves) {
+            if (m.kind() == ReviewMoves.Kind.STRAFE_LEFT || m.kind() == ReviewMoves.Kind.STRAFE_RIGHT) continue;
+            if (c >= m.start() && c <= m.end() + 8 && (best == null || m.start() >= best.start())) best = m;
+        }
+        return best;
+    }
+
+    static String moveName(ReviewMoves.Kind k) {
+        return switch (k) {
+            case CRIT -> "Crit";
+            case SPRINT_HIT -> "Sprint hit";
+            case JUMP_HIT -> "Jump hit";
+            case WEAK_HIT -> "Weak hit (not charged)";
+            case JUMP_RESET -> "Jump reset";
+            case W_TAP -> "W-tap";
+            case S_TAP -> "S-tap";
+            case STRAFE_LEFT -> "Strafe left";
+            case STRAFE_RIGHT -> "Strafe right";
+        };
+    }
+
     /** In a clip: ticks (up to 20) since a hit you took in the round that Swordbot did not take at that moment (large when none). */
     static double sinceDodged() {
-        if (round == null) return 1e9;
+        if (round == null || !showingSwordbot) return 1e9;
         int c = (int) Math.floor(cursor);
         for (int k = c; k >= Math.max(0, c - 19); k--) {
             int j = clipFrom + k;
@@ -274,6 +345,8 @@ public final class ReviewClient {
         analysis = roundAnalysis;
         round = null;
         roundAnalysis = null;
+        yours = swordbot = null;
+        showingSwordbot = false;
         prepare();
         seek(roundCursor);
         playing = false;
@@ -329,6 +402,7 @@ public final class ReviewClient {
 
     private static void prepare() {
         int n = ticks();
+        moves = ReviewMoves.of(record, true);
         walkPos = new float[n];
         walkSpeed = new float[n];
         body = new float[n];
@@ -360,8 +434,8 @@ public final class ReviewClient {
             float off = (float) ReviewAnalysis.wrap(t.opp.yaw - bodyYaw);
             if (Math.abs(off) > 50) bodyYaw = t.opp.yaw - Math.signum(off) * 50;
             body[i] = bodyYaw;
-            if (t.self.swingTime == -1) ss = i;
-            if (t.opp.swingTime == -1) os = i;
+            if (record.swingStart(i, true)) ss = i;
+            if (record.swingStart(i, false)) os = i;
             if (t.self.hurt) sh = i;
             if (t.opp.hurt) oh = i;
             selfSwing[i] = ss;
@@ -400,7 +474,12 @@ public final class ReviewClient {
                     }
                 }
             }
-            if (cursor >= n - 1) {
+            if (cursor >= n - 1 && inClip() && !showingSwordbot) {
+                show(true);
+                cursor = 0;
+                lastWhole = -1;
+                n = ticks();
+            } else if (cursor >= n - 1) {
                 cursor = n - 1;
                 playing = false;
             }
@@ -409,8 +488,8 @@ public final class ReviewClient {
         if (whole > lastWhole && whole - lastWhole <= 3) {
             for (int i = lastWhole + 1; i <= whole; i++) {
                 ReviewRecord.Tick t = record.ticks.get(i);
-                if (t.self.swingTime == -1 && mc.player != null) swing(mc.player);
-                if (t.opp.swingTime == -1 && ghost != null) swing(ghost);
+                if (record.swingStart(i, true) && mc.player != null) swing(mc.player);
+                if (record.swingStart(i, false) && ghost != null) swing(ghost);
             }
         }
         lastWhole = whole;
