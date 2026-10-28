@@ -17,7 +17,8 @@ import java.util.List;
  * Needs keys, so only the {@code self} side of a record. The window and channels must stay as movefeat.py computes them.
  */
 public final class ReviewMoveModel {
-    public record Group(int id, String name, String description, boolean weak) {}
+    /** {@code sprintName} is shown when the server saw a sprint hit there; the net does not see the sprint flag. */
+    public record Group(int id, String name, String sprintName, String description, boolean weak) {}
 
     /** One grouped hit: {@code hit} is the swing start tick index in {@code ReviewRecord.ticks}. */
     public record Hit(Group group, int hit) {}
@@ -48,7 +49,9 @@ public final class ReviewMoveModel {
         int k = 0;
         for (var e : j.getAsJsonArray("groups")) {
             JsonObject g = e.getAsJsonObject();
-            groups.add(new Group(k++, g.get("name").getAsString(), g.get("description").getAsString(), g.get("weak").getAsBoolean()));
+            String name = g.get("name").getAsString();
+            String sprint = g.has("sprintName") ? g.get("sprintName").getAsString() : name;
+            groups.add(new Group(k++, name, sprint, g.get("description").getAsString(), g.get("weak").getAsBoolean()));
         }
         if (mean.length != inputs || w1.length != hidden * inputs || w2.length != embed * hidden || centroids.length != groups.size() * embed)
             throw new IllegalArgumentException("move model shapes");
