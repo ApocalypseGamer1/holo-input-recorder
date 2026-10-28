@@ -551,8 +551,8 @@ public final class ReviewClient {
             }
             if (stopAtMarks && playing) {
                 for (ReviewAnalysis.Mark m : analysis.marks()) {
-                    if (before < m.index() && cursor >= m.index()) {
-                        cursor = m.index();
+                    if (before < m.end() && cursor >= m.end()) {
+                        cursor = m.end();
                         playing = false;
                         break;
                     }
@@ -591,7 +591,7 @@ public final class ReviewClient {
     }
 
     private static boolean inMarkWindow(double at) {
-        for (ReviewAnalysis.Mark m : analysis.marks()) if (at >= m.from() - 20 && at <= m.to()) return true;
+        for (ReviewAnalysis.Mark m : analysis.marks()) if (at >= m.start() && at <= m.end()) return true;
         return false;
     }
 

@@ -15,7 +15,16 @@ public final class ReviewAnalysis {
     public enum Kind { BLUNDER, MISTAKE, INACCURACY, BEST, MISS }
 
     /** A moment to replay: jump to {@code index}, play {@code from..to}. {@code delta} is the bar change over the window (0 for MISS). */
-    public record Mark(Kind kind, int index, int from, int to, double delta, boolean forced) {}
+    public record Mark(Kind kind, int index, int from, int to, double delta, boolean forced) {
+        /** The stretch that explains the mark: {@link #EXPLAIN_LEAD} ticks before the bar starts to move, to where it stops. */
+        public int start() {
+            return Math.max(0, from - EXPLAIN_LEAD);
+        }
+
+        public int end() {
+            return to;
+        }
+    }
 
     /** The coach's argmax reply to the state at one tick (it applies to the next tick). */
     public record Suggestion(int move, boolean forward, boolean back, boolean left, boolean right,
@@ -101,28 +110,32 @@ public final class ReviewAnalysis {
         return c;
     }
 
-    /** The mark whose replay window (from {@link #EXPLAIN_LEAD} ticks before {@code from}, to {@code to}) holds {@code tick}; the nearest index wins. */
+    /** The mark whose stretch ({@link Mark#start()} to {@link Mark#end()}) holds {@code tick}; the nearest index wins. */
     public Mark markAt(int tick) {
         Mark best = null;
         for (Mark m : marks) {
-            if (tick < Math.max(0, m.from() - EXPLAIN_LEAD) || tick > m.to()) continue;
+            if (tick < m.start() || tick > m.end()) continue;
             if (best == null || Math.abs(m.index() - tick) < Math.abs(best.index() - tick)) best = m;
         }
         return best;
     }
 
-    /**
-     * Up to {@link #EXPLAIN_LINES} short lines on why the mark happened: the hit trade, your move against the coach's
-     * (Swordbot's) at the tick the replay stops on, then the patterns over the window.
-     */
     public List<String> explain(Mark m) {
+        return explain(m, List.of());
+    }
+
+    /**
+     * Up to {@link #EXPLAIN_LINES} short lines on why the mark happened: the hit trade, the {@code moves} lines (yours against
+     * Swordbot's), then the patterns over the window.
+     */
+    public List<String> explain(Mark m, List<String> moves) {
         List<String> out = new ArrayList<>();
-        int lo = Math.max(0, m.from() - EXPLAIN_LEAD), hi = Math.min(n - 1, m.to());
+        int lo = m.start(), hi = Math.min(n - 1, m.end());
         if (lo <= hi && m.kind() != Kind.MISS) {
             String trade = trade(lo, hi);
             if (trade != null) out.add(trade);
         }
-        if (m.kind() != Kind.BEST) out.addAll(moment(m.index()));
+        out.addAll(moves);
         for (String c : causes(m, false)) if (!c.equals(NO_CAUSE) || out.isEmpty()) out.add(c);
         return List.copyOf(out.subList(0, Math.min(out.size(), EXPLAIN_LINES)));
     }
@@ -152,55 +165,6 @@ public final class ReviewAnalysis {
         return health > 0 ? String.format(Locale.ROOT, " (-%.1f❤)", health / 2.0) : "";
     }
 
-    /** Your move against the bot's at one tick, the tick a replay of the mark stops on, in move names. Empty without coach data. */
-    List<String> moment(int i) {
-        if (i < 0 || i + 1 >= n || suggestions[i] == null) return List.of();
-        Suggestion s = suggestions[i];
-        Tick a = record.ticks.get(i), b = record.ticks.get(i + 1);
-        int k = b.keys;
-        String you = move(i, (k & K_FWD) != 0 && (k & K_BACK) == 0, (k & K_LEFT) != 0 && (k & K_RIGHT) == 0,
-                (k & K_BACK) != 0 && (k & K_FWD) == 0, (k & K_RIGHT) != 0 && (k & K_LEFT) == 0,
-                (k & K_JUMP) != 0, (k & K_SPRINT) != 0, record.swingStart(i + 1, true));
-        String bot = move(i, s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5);
-        double turn = wrap(s.yawDeg() - wrap(b.self.yaw - a.self.yaw));
-        String time = String.format(Locale.ROOT, "%d:%04.1f", i / 1200, (i % 1200) / 20.0);
-        if (you.equals(bot) && Math.abs(turn) < 10) return List.of("At " + time + " you played like Swordbot");
-        String botLine = "Swordbot would: " + bot;
-        if (Math.abs(turn) >= 10) {
-            String aim = "turn " + (turn > 0 ? "right " : "left ") + Math.round(Math.abs(turn)) + "° more";
-            if (you.equals(bot)) botLine = "Same move; Swordbot would " + aim;
-            else if (botLine.length() + aim.length() + 2 <= 48) botLine += ", " + aim;
-        }
-        return List.of("At " + time + " you did: " + you, botLine);
-    }
-
-    /**
-     * Keys for tick {@code i} named as a move from the player's state there: the hit kind (weak, crit, sprint, jump), then a
-     * tap or jump reset right after a hit, else the way in or out, then a strafe.
-     */
-    String move(int i, boolean w, boolean left, boolean back, boolean right, boolean jump, boolean run, boolean hit) {
-        Tick t = record.ticks.get(i);
-        boolean air = !t.self.onGround, falling = air && i > 0 && t.self.y < record.ticks.get(i - 1).self.y;
-        boolean charged = true, hurt = false, landed = false;
-        for (int j = i; j > i + 1 - ReviewMoves.FULL_CHARGE && j >= 0; j--) charged &= !record.swingStart(j, true);
-        for (int j = Math.max(0, i - ReviewMoves.JUMP_RESET_WINDOW); j <= i; j++) hurt |= record.ticks.get(j).self.hurt;
-        for (int j = Math.max(0, i - ReviewMoves.TAP_WINDOW - 1); j <= i; j++) landed |= record.ticks.get(j).opp.hurt;
-        boolean heldW = (t.keys & K_FWD) != 0 && (t.keys & K_BACK) == 0;
-        List<String> on = new ArrayList<>();
-        if (hit) on.add(!charged ? "weak hit" : air && falling && !run ? "crit" : run && w ? "sprint hit" : air ? "jump hit" : "hit");
-        if (landed && back) on.add("S-tap");
-        else if (landed && heldW && !w) on.add("W-tap");
-        else if (jump && hurt && !air) on.add("jump reset");
-        else if (back) on.add("back off");
-        else if (w && !hit) on.add(run ? "sprint in" : "walk in");
-        if (left) on.add("strafe left");
-        if (right) on.add("strafe right");
-        if (jump && !(hurt && !air) && !on.contains("jump hit")) on.add("jump");
-        if (on.isEmpty()) return "Stand still";
-        String m = String.join(" + ", on);
-        return Character.toUpperCase(m.charAt(0)) + m.substring(1);
-    }
-
     List<String> causes(Mark m) {
         return causes(m, true);
     }
@@ -208,7 +172,7 @@ public final class ReviewAnalysis {
     /** The window-level patterns behind a mark, most important first, without the summary lines. */
     List<String> causes(Mark m, boolean hits) {
         List<String> out = new ArrayList<>();
-        int lo = Math.max(0, m.from() - EXPLAIN_LEAD), hi = Math.min(n - 1, m.to());
+        int lo = m.start(), hi = Math.min(n - 1, m.end());
         if (lo <= hi) {
             if (hits) explainHits(out, m, lo, hi);
             int runs = missRuns(lo, hi);
@@ -373,6 +337,15 @@ public final class ReviewAnalysis {
         for (int j = Math.max(0, center - SPACING); j <= Math.min(used.length - 1, center + SPACING); j++) used[j] = true;
     }
 
+    /** Where the bar has done 90% of its fall ({@code dir} -1) or rise (1) over the {@link #HORIZON} ticks after {@code at}. */
+    private int turn(int at, int dir) {
+        int last = Math.min(at + HORIZON, n - 1);
+        double total = 0;
+        for (int i = at; i <= last; i++) total = Math.max(total, (shown[i] - shown[at]) * dir);
+        for (int i = at + 1; i <= last; i++) if ((shown[i] - shown[at]) * dir >= 0.9 * total) return i;
+        return last;
+    }
+
     private List<Mark> computeMarks() {
         List<Mark> out = new ArrayList<>();
         if (n < 2) return out;
@@ -385,7 +358,7 @@ public final class ReviewAnalysis {
             int at = -1;
             for (int i = 0; i < n; i++) if (!used[i] && (at < 0 || d[i] < d[at])) at = i;
             if (at < 0 || d[at] > -DROP_MIN) break;
-            int to = Math.min(at + HORIZON, n - 1);
+            int to = turn(at, -1);
             double mag = -d[at];
             Kind kind = mag >= BLUNDER_MIN ? Kind.BLUNDER : mag >= MISTAKE_MIN ? Kind.MISTAKE : Kind.INACCURACY;
             double mean = windowMean(at, to);
@@ -400,7 +373,7 @@ public final class ReviewAnalysis {
             int at = -1;
             for (int i = 0; i < n; i++) if (!used[i] && (at < 0 || d[i] > d[at])) at = i;
             if (at < 0 || d[at] < RISE_MIN) break;
-            int to = Math.min(at + HORIZON, n - 1);
+            int to = turn(at, 1);
             double mean = windowMean(at, to);
             boolean nearDrop = false;
             for (Mark m : drops) if (Math.abs(m.from() - at) <= SPACING) nearDrop = true;

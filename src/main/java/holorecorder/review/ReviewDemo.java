@@ -92,7 +92,7 @@ public final class ReviewDemo {
                 case 14 -> shot(mc, "scrub", 5);
                 case 15 -> {
                     ReviewRecord r = ReviewClient.record;
-                    int from = ReviewClient.analysis.marks().isEmpty() ? 100 : ReviewClient.analysis.marks().get(0).from();
+                    int from = ReviewClient.analysis.marks().isEmpty() ? 100 : ReviewClient.analysis.marks().get(0).start();
                     ReviewRecord clip = new ReviewRecord();
                     clip.oppName = r.oppName;
                     clip.oppItems = r.oppItems;
