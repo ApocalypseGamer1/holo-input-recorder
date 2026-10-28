@@ -363,14 +363,15 @@ final class ReviewScreen extends Screen {
         g.fill(cx - 1, y0 - 4, cx + 1, y1 + 4, COACH);
     }
 
-    /** The move the shown fighter makes now, under the crosshair. */
+    /** The move the shown fighter makes now, under the crosshair (in a clip: under the compare box). */
     private void drawMoveNow(GuiGraphicsExtractor g, Font f, int w, int h, boolean bot) {
-        ReviewMoves.Move m = ReviewClient.moveNow();
+        ReviewClient.Chip m = ReviewClient.moveNow();
         if (m == null) return;
-        String text = (bot ? "Swordbot: " : "You: ") + ReviewClient.moveName(m.kind());
-        int tw = f.width(text), y = h / 2 + 12;
-        g.fill(w / 2 - tw / 2 - 3, y - 2, w / 2 + tw / 2 + 3, y + 10, PANEL);
-        g.centeredText(f, text, w / 2, y, m.kind() == ReviewMoves.Kind.WEAK_HIT ? 0xFFF7C631 : bot ? COACH : ON);
+        String text = (bot ? "Swordbot: " : "You: ") + m.name();
+        int tw = Math.max(f.width(text), f.width(m.detail())), y = ReviewClient.inClip() ? h - 88 : h / 2 + 12, y1 = m.detail().isEmpty() ? y + 10 : y + 20;
+        g.fill(w / 2 - tw / 2 - 3, y - 2, w / 2 + tw / 2 + 3, y1, PANEL);
+        g.centeredText(f, text, w / 2, y, m.weak() ? 0xFFF7C631 : bot ? COACH : ON);
+        if (!m.detail().isEmpty()) g.centeredText(f, m.detail(), w / 2, y + 10, MUTED);
     }
 
     /** Your play against Swordbot's over the same stretch. */
@@ -399,15 +400,15 @@ final class ReviewScreen extends Screen {
         g.text(f, botMoves, x0, y0 + 23 + rows.length * 10, COACH, true);
     }
 
-    /** "Sprint hit x2, W-tap": hit and tap moves by count, strafes as one word. */
-    private static String summary(List<ReviewMoves.Move> moves) {
-        java.util.Map<ReviewMoves.Kind, Integer> count = new java.util.EnumMap<>(ReviewMoves.Kind.class);
-        for (ReviewMoves.Move m : moves) count.merge(m.kind(), 1, Integer::sum);
+    /** "Sprint hit + W-tap x2, Crit": the most used moves by count (3 at most). */
+    private static String summary(List<ReviewClient.Chip> moves) {
+        java.util.Map<String, Integer> count = new java.util.LinkedHashMap<>();
+        for (ReviewClient.Chip m : moves) count.merge(m.name(), 1, Integer::sum);
+        List<java.util.Map.Entry<String, Integer>> top = new ArrayList<>(count.entrySet());
+        top.sort((a, b) -> b.getValue() - a.getValue());
         List<String> parts = new ArrayList<>();
-        for (var e : count.entrySet()) {
-            String name = ReviewClient.moveName(e.getKey());
-            parts.add(e.getValue() > 1 ? name + " x" + e.getValue() : name);
-        }
+        for (var e : top.subList(0, Math.min(3, top.size()))) parts.add(e.getValue() > 1 ? e.getKey() + " x" + e.getValue() : e.getKey());
+        if (top.size() > 3) parts.add("+" + (top.size() - 3) + " more");
         return parts.isEmpty() ? "none" : String.join(", ", parts);
     }
 

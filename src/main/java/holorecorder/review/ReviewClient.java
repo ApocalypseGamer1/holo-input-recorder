@@ -65,7 +65,7 @@ public final class ReviewClient {
     /** The same stretch twice: your play (from the round) and Swordbot's; the clip shows yours first, then Swordbot's. */
     private static ReviewRecord yours, swordbot;
     static boolean showingSwordbot;
-    private static List<ReviewMoves.Move> moves = List.of();
+    private static List<Chip> moves = List.of();
     static int clipFrom = -1;
     private static String clipNote;
     private static long clipAsked, clipNoteAt;
@@ -291,16 +291,39 @@ public final class ReviewClient {
         return new double[] {landed, taken, lost};
     }
 
-    static List<ReviewMoves.Move> movesOf(boolean swordbotSide) {
-        return ReviewMoves.of(swordbotSide ? swordbot : yours, true);
+    /** A move to show under the crosshair: a learned hit group, or a rule move the model does not cover. */
+    record Chip(String name, String detail, boolean weak, int start, int end) {}
+
+    /** The reviewed fighter's moves: each landed hit by its learned group, plus jump resets; rule names when the model is missing. */
+    static List<Chip> chips(ReviewRecord r) {
+        List<Chip> out = new java.util.ArrayList<>();
+        java.util.Set<Integer> grouped = new java.util.HashSet<>();
+        ReviewMoveModel model = ReviewMoveModel.get();
+        if (model != null) {
+            for (ReviewMoveModel.Hit h : model.of(r)) {
+                out.add(new Chip(h.group().name(), h.group().description(), h.group().weak(), h.hit(), h.hit()));
+                grouped.add(h.hit());
+            }
+        }
+        for (ReviewMoves.Move m : ReviewMoves.of(r, true)) {
+            ReviewMoves.Kind k = m.kind();
+            if (k == ReviewMoves.Kind.STRAFE_LEFT || k == ReviewMoves.Kind.STRAFE_RIGHT) continue;
+            if (k != ReviewMoves.Kind.JUMP_RESET && grouped.contains(m.start())) continue;
+            out.add(new Chip(moveName(k), "", k == ReviewMoves.Kind.WEAK_HIT, m.start(), m.end()));
+        }
+        out.sort(java.util.Comparator.comparingInt(Chip::start));
+        return out;
     }
 
-    /** The move the shown fighter is making at the cursor (shown a little past its end), or null. Strafes are left out. */
-    static ReviewMoves.Move moveNow() {
+    static List<Chip> movesOf(boolean swordbotSide) {
+        return chips(swordbotSide ? swordbot : yours);
+    }
+
+    /** The move the shown fighter is making at the cursor (shown a little past its end), or null. */
+    static Chip moveNow() {
         int c = (int) Math.floor(cursor);
-        ReviewMoves.Move best = null;
-        for (ReviewMoves.Move m : moves) {
-            if (m.kind() == ReviewMoves.Kind.STRAFE_LEFT || m.kind() == ReviewMoves.Kind.STRAFE_RIGHT) continue;
+        Chip best = null;
+        for (Chip m : moves) {
             if (c >= m.start() && c <= m.end() + 8 && (best == null || m.start() >= best.start())) best = m;
         }
         return best;
@@ -404,7 +427,7 @@ public final class ReviewClient {
 
     private static void prepare() {
         int n = ticks();
-        moves = ReviewMoves.of(record, true);
+        moves = chips(record);
         walkPos = new float[n];
         walkSpeed = new float[n];
         body = new float[n];
