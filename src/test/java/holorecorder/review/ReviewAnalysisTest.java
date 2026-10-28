@@ -717,8 +717,8 @@ class ReviewAnalysisTest {
         String time = String.format(Locale.ROOT, "%d:%04.1f", m.index() / 1200, (m.index() % 1200) / 20.0);
         assertEquals(List.of(
                 "Bot hit you 1x (-1.1❤), you hit it 1x (-0.6❤)",
-                "At " + time + " you pressed: S",
-                "Swordbot would press: W Run",
+                "At " + time + " you did: Back off",
+                "Swordbot would: Sprint in",
                 "You backed off; Swordbot would push in",
                 "You were not sprinting"), a.explain(m));
     }
@@ -732,8 +732,26 @@ class ReviewAnalysisTest {
         assertEquals(List.of("At 0:01.0 you played like Swordbot"), a.moment(20));
         r.ticks.get(21).self.yaw = 40f;
         a = ReviewAnalysis.of(r);
-        assertEquals(List.of("At 0:01.0 you pressed: W", "Same keys; Swordbot would turn left 40° more"), a.moment(20));
+        assertEquals(List.of("At 0:01.0 you did: Walk in", "Same move; Swordbot would turn left 40° more"), a.moment(20));
         assertEquals(List.of(), a.moment(59));
+    }
+
+    @Test
+    void stopMomentNamesMovesNotKeys() {
+        ReviewRecord r = rec(60);
+        for (Tick t : r.ticks) t.self.onGround = true;
+        ReviewAnalysis a = ReviewAnalysis.of(r);
+        assertEquals("Stand still", a.move(30, false, false, false, false, false, false, false));
+        assertEquals("Sprint in + strafe left", a.move(30, true, true, false, false, false, true, false));
+        assertEquals("Sprint hit", a.move(30, true, false, false, false, false, true, true));
+        r.ticks.get(29).opp.hurt = true;
+        assertEquals("S-tap", a.move(30, false, false, true, false, false, false, false));
+        r.ticks.get(30).keys = W;
+        assertEquals("W-tap + strafe right", a.move(30, false, false, false, true, false, false, false));
+        r.ticks.get(29).self.hurt = true;
+        assertEquals("Jump reset", a.move(31, false, false, false, false, true, false, false));
+        r.ticks.get(28).self.swingTime = 0;
+        assertEquals("Weak hit + jump reset", a.move(31, false, false, false, false, true, false, true));
     }
 
     @Test

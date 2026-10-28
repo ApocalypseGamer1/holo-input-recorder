@@ -112,8 +112,8 @@ public final class ReviewAnalysis {
     }
 
     /**
-     * Up to {@link #EXPLAIN_LINES} short lines on why the mark happened: the hit trade, what you pressed against what the
-     * coach (Swordbot) would press at the tick the replay stops on, then the patterns over the window.
+     * Up to {@link #EXPLAIN_LINES} short lines on why the mark happened: the hit trade, your move against the coach's
+     * (Swordbot's) at the tick the replay stops on, then the patterns over the window.
      */
     public List<String> explain(Mark m) {
         List<String> out = new ArrayList<>();
@@ -152,38 +152,53 @@ public final class ReviewAnalysis {
         return health > 0 ? String.format(Locale.ROOT, " (-%.1f❤)", health / 2.0) : "";
     }
 
-    /** Your keys against the bot's at one tick, the tick a replay of the mark stops on. Empty without coach data. */
+    /** Your move against the bot's at one tick, the tick a replay of the mark stops on, in move names. Empty without coach data. */
     List<String> moment(int i) {
         if (i < 0 || i + 1 >= n || suggestions[i] == null) return List.of();
         Suggestion s = suggestions[i];
         Tick a = record.ticks.get(i), b = record.ticks.get(i + 1);
         int k = b.keys;
-        String you = keys((k & K_FWD) != 0 && (k & K_BACK) == 0, (k & K_LEFT) != 0 && (k & K_RIGHT) == 0,
+        String you = move(i, (k & K_FWD) != 0 && (k & K_BACK) == 0, (k & K_LEFT) != 0 && (k & K_RIGHT) == 0,
                 (k & K_BACK) != 0 && (k & K_FWD) == 0, (k & K_RIGHT) != 0 && (k & K_LEFT) == 0,
                 (k & K_JUMP) != 0, (k & K_SPRINT) != 0, record.swingStart(i + 1, true));
-        String bot = keys(s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5);
+        String bot = move(i, s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5);
         double turn = wrap(s.yawDeg() - wrap(b.self.yaw - a.self.yaw));
         String time = String.format(Locale.ROOT, "%d:%04.1f", i / 1200, (i % 1200) / 20.0);
         if (you.equals(bot) && Math.abs(turn) < 10) return List.of("At " + time + " you played like Swordbot");
-        String botLine = "Swordbot would press: " + bot;
+        String botLine = "Swordbot would: " + bot;
         if (Math.abs(turn) >= 10) {
             String aim = "turn " + (turn > 0 ? "right " : "left ") + Math.round(Math.abs(turn)) + "° more";
-            if (you.equals(bot)) botLine = "Same keys; Swordbot would " + aim;
+            if (you.equals(bot)) botLine = "Same move; Swordbot would " + aim;
             else if (botLine.length() + aim.length() + 2 <= 48) botLine += ", " + aim;
         }
-        return List.of("At " + time + " you pressed: " + you, botLine);
+        return List.of("At " + time + " you did: " + you, botLine);
     }
 
-    private static String keys(boolean w, boolean a, boolean s, boolean d, boolean jump, boolean run, boolean hit) {
+    /**
+     * Keys for tick {@code i} named as a move from the player's state there: the hit kind (weak, crit, sprint, jump), then a
+     * tap or jump reset right after a hit, else the way in or out, then a strafe.
+     */
+    String move(int i, boolean w, boolean left, boolean back, boolean right, boolean jump, boolean run, boolean hit) {
+        Tick t = record.ticks.get(i);
+        boolean air = !t.self.onGround, falling = air && i > 0 && t.self.y < record.ticks.get(i - 1).self.y;
+        boolean charged = true, hurt = false, landed = false;
+        for (int j = i; j > i + 1 - ReviewMoves.FULL_CHARGE && j >= 0; j--) charged &= !record.swingStart(j, true);
+        for (int j = Math.max(0, i - ReviewMoves.JUMP_RESET_WINDOW); j <= i; j++) hurt |= record.ticks.get(j).self.hurt;
+        for (int j = Math.max(0, i - ReviewMoves.TAP_WINDOW - 1); j <= i; j++) landed |= record.ticks.get(j).opp.hurt;
+        boolean heldW = (t.keys & K_FWD) != 0 && (t.keys & K_BACK) == 0;
         List<String> on = new ArrayList<>();
-        if (w) on.add("W");
-        if (a) on.add("A");
-        if (s) on.add("S");
-        if (d) on.add("D");
-        if (jump) on.add("Jump");
-        if (run) on.add("Run");
-        if (hit) on.add("Hit");
-        return on.isEmpty() ? "nothing" : String.join(" ", on);
+        if (hit) on.add(!charged ? "weak hit" : air && falling && !run ? "crit" : run && w ? "sprint hit" : air ? "jump hit" : "hit");
+        if (landed && back) on.add("S-tap");
+        else if (landed && heldW && !w) on.add("W-tap");
+        else if (jump && hurt && !air) on.add("jump reset");
+        else if (back) on.add("back off");
+        else if (w && !hit) on.add(run ? "sprint in" : "walk in");
+        if (left) on.add("strafe left");
+        if (right) on.add("strafe right");
+        if (jump && !(hurt && !air) && !on.contains("jump hit")) on.add("jump");
+        if (on.isEmpty()) return "Stand still";
+        String m = String.join(" + ", on);
+        return Character.toUpperCase(m.charAt(0)) + m.substring(1);
     }
 
     List<String> causes(Mark m) {
