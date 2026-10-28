@@ -6,7 +6,11 @@
     "MouseHandlerMixin",
     "KeyboardHandlerMixin",
     "KeyMappingAccessor",
-    "MinecraftMixin"
+    "MinecraftMixin",
+    "ReviewCameraMixin",
+    "ReviewRenderMixin",
+    "ReviewEntityMixin",
+    "ReviewSkinMixin"
   ],
   "injectors": {
     "defaultRequire": 1

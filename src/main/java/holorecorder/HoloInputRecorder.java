@@ -8,7 +8,10 @@ import holorecorder.protocol.ClientModsV2Payload;
 import holorecorder.protocol.IntegrityChallengePayload;
 import holorecorder.protocol.IntegrityResponsePayload;
 import holorecorder.protocol.RoundStatePayload;
+import holorecorder.protocol.ReviewDataPayload;
+import holorecorder.protocol.ReviewEndPayload;
 import holorecorder.protocol.WinBarPayload;
+import holorecorder.review.ReviewClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -57,6 +60,10 @@ public final class HoloInputRecorder implements ClientModInitializer {
         PayloadTypeRegistry.clientboundPlay().register(RoundStatePayload.TYPE, RoundStatePayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(IntegrityChallengePayload.TYPE, IntegrityChallengePayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(WinBarPayload.TYPE, WinBarPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ReviewDataPayload.TYPE, ReviewDataPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ReviewEndPayload.TYPE, ReviewEndPayload.CODEC);
+        ClientPlayNetworking.registerGlobalReceiver(ReviewDataPayload.TYPE, (payload, context) ->
+                context.client().execute(() -> ReviewClient.receive(context.client(), payload)));
         ClientPlayNetworking.registerGlobalReceiver(RoundStatePayload.TYPE, (payload, context) ->
                 context.client().execute(() -> setRound(context.client(), payload)));
         ClientPlayNetworking.registerGlobalReceiver(IntegrityChallengePayload.TYPE, (payload, context) ->
@@ -65,6 +72,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
                 context.client().execute(() -> WinBarHud.receive(context.client(), payload)));
         WinBarHud.register();
         ClientTickEvents.END_CLIENT_TICK.register(WinBarHud::demoTick);
+        ClientTickEvents.END_CLIENT_TICK.register(holorecorder.review.ReviewDemo::tick);
         RawInputCapture.screenProbe(() -> screenKind(Minecraft.getInstance()));
         ClientTickEvents.START_CLIENT_TICK.register(HoloInputRecorder::captureTick);
         // Mod list for data protection: once per connection (JOIN also fires after a transfer), only if the server declared
@@ -80,6 +88,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             reset();
             WinBarHud.reset();
+            ReviewClient.reset();
         });
     }
 

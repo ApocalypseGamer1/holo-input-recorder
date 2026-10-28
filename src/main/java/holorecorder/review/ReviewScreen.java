@@ -1,0 +1,379 @@
+package holorecorder.review;
+
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** The review controls over the replay: win chance graph with marks, play/scrub/speed, your keys against the bot's. */
+final class ReviewScreen extends Screen {
+    private static final int LIGHT = 0xFFEDEDED, DARK = 0xFF3A3A3A, OUTLINE = 0xFF101010, PANEL = 0xB0000000;
+    private static final int TEXT = 0xFFFFFFFF, MUTED = 0xFFB0B0B0, COACH = 0xFF4FD8FF, ON = 0xFF81B64C, OFF = 0x60FFFFFF;
+    private static final double[] SPEEDS = {0.25, 0.5, 1};
+
+    private record Button(int x, int y, int w, int h, Runnable action) {
+        boolean hit(double mx, double my) {
+            return mx >= x && mx < x + w && my >= y && my < y + h;
+        }
+    }
+
+    private final List<Button> buttons = new ArrayList<>();
+    private int graphX0, graphX1, graphY0, graphY1;
+    private boolean scrubbing;
+
+    ReviewScreen() {
+        super(Component.literal("Round review"));
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+
+    @Override
+    public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float partial) {
+    }
+
+    @Override
+    public void removed() {
+        ReviewClient.stop(minecraft, true);
+    }
+
+    static int color(ReviewAnalysis.Kind k) {
+        return switch (k) {
+            case BLUNDER -> 0xFFCA3431;
+            case MISTAKE -> 0xFFE58F2A;
+            case INACCURACY -> 0xFFF7C631;
+            case BEST -> 0xFF81B64C;
+            case MISS -> 0xFFEE6B9E;
+        };
+    }
+
+    static String symbol(ReviewAnalysis.Kind k) {
+        return switch (k) {
+            case BLUNDER -> "??";
+            case MISTAKE -> "?";
+            case INACCURACY -> "?!";
+            case BEST -> "!";
+            case MISS -> "x";
+        };
+    }
+
+    static String label(ReviewAnalysis.Kind k) {
+        return switch (k) {
+            case BLUNDER -> "Blunder";
+            case MISTAKE -> "Mistake";
+            case INACCURACY -> "Inaccuracy";
+            case BEST -> "Best";
+            case MISS -> "Miss";
+        };
+    }
+
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partial) {
+        ReviewRecord r = ReviewClient.record;
+        ReviewAnalysis a = ReviewClient.analysis;
+        if (r == null || a == null || !ReviewClient.active()) return;
+        buttons.clear();
+        Font f = font;
+        int w = width, h = height, n = ReviewClient.ticks(), i = (int) Math.floor(ReviewClient.cursor);
+        float shown = a.shown.length == 0 ? 0.5f : a.shown[Math.max(0, Math.min(a.shown.length - 1, i))];
+
+        drawBar(g, f, h, shown, r);
+        drawAim(g, w, h, a.suggestion(i));
+        drawHeader(g, f, w, r, a);
+        drawKeys(g, f, w, h, r, a, i);
+
+        int panelY = h - 84;
+        g.fill(0, panelY, w, h, PANEL);
+        graphX0 = 24;
+        graphX1 = w - 24;
+        graphY0 = panelY + 26;
+        graphY1 = panelY + 54;
+        drawGraph(g, f, a, n, mouseX, mouseY);
+        drawControls(g, f, w, h - 24, n);
+    }
+
+    private void drawBar(GuiGraphicsExtractor g, Font f, int guiH, float pSelf, ReviewRecord r) {
+        int barH = Math.max(40, Math.round(guiH * 0.40f)), y0 = (guiH - 84 - barH) / 2, x0 = 3, x1 = 13;
+        int split = y0 + Math.round(barH * (1f - pSelf));
+        g.fill(x0 - 1, y0 - 1, x1 + 1, y0 + barH + 1, OUTLINE);
+        g.fill(x0, y0, x1, split, DARK);
+        g.fill(x0, split, x1, y0 + barH, LIGHT);
+        g.fill(x0, y0 + barH / 2, x1, y0 + barH / 2 + 1, 0xFF8A8A8A);
+        String pct = Math.round(pSelf * 100) + "%";
+        g.text(f, pct, x1 + 3, pSelf >= 0.5f ? y0 + barH - f.lineHeight : y0, TEXT, true);
+        g.text(f, f.plainSubstrByWidth(r.oppName, 60), x0, y0 - 2 - f.lineHeight, MUTED, true);
+        g.text(f, "You", x0, y0 + barH + 3, TEXT, true);
+    }
+
+    /** Where the bot would aim: a ring at that direction; the crosshair is where you aimed. */
+    private void drawAim(GuiGraphicsExtractor g, int w, int h, ReviewAnalysis.Suggestion s) {
+        int cx = w / 2, cy = h / 2;
+        g.fill(cx - 4, cy, cx + 5, cy + 1, 0xC0FFFFFF);
+        g.fill(cx, cy - 4, cx + 1, cy + 5, 0xC0FFFFFF);
+        if (s == null || ReviewClient.coachView) return;
+        double[] off = ReviewClient.coachOffset();
+        double fov = Math.toRadians(minecraft.gameRenderer.mainCamera().getFov());
+        double scale = (h / 2.0) / Math.tan(fov / 2);
+        int px = cx + (int) Math.round(Math.tan(Math.toRadians(Math.max(-80, Math.min(80, off[0])))) * scale);
+        int py = cy + (int) Math.round(Math.tan(Math.toRadians(Math.max(-80, Math.min(80, off[1])))) * scale);
+        px = Math.max(6, Math.min(w - 6, px));
+        py = Math.max(6, Math.min(h - 90, py));
+        g.outline(px - 5, py - 5, 11, 11, COACH);
+        g.outline(px - 4, py - 4, 9, 9, 0x804FD8FF);
+    }
+
+    private void drawHeader(GuiGraphicsExtractor g, Font f, int w, ReviewRecord r, ReviewAnalysis a) {
+        String result = switch (r.outcome) {
+            case ReviewRecord.OUTCOME_WIN -> "Win";
+            case ReviewRecord.OUTCOME_LOSS -> "Loss";
+            case ReviewRecord.OUTCOME_DRAW -> "Draw";
+            default -> "Unfinished";
+        };
+        String title = "Round review: " + result + " vs " + r.oppName;
+        double acc = a.accuracy();
+        if (!Double.isNaN(acc)) title += "   Accuracy " + Math.round(acc) + "%";
+        int tw = f.width(title);
+        g.fill(w / 2 - tw / 2 - 4, 2, w / 2 + tw / 2 + 4, 14 + f.lineHeight, PANEL);
+        g.centeredText(f, title, w / 2, 4, TEXT);
+        int total = 0;
+        for (ReviewAnalysis.Kind k : ReviewAnalysis.Kind.values()) total += f.width(symbol(k) + " " + a.count(k)) + 8;
+        int x = w / 2 - total / 2;
+        int y = 5 + f.lineHeight;
+        for (ReviewAnalysis.Kind k : ReviewAnalysis.Kind.values()) {
+            String p = symbol(k) + " " + a.count(k);
+            g.text(f, p, x, y, color(k), true);
+            x += f.width(p) + 8;
+        }
+        if (r.coachName.isEmpty()) g.centeredText(f, "No bot data for this round: marks use the win chance only.", w / 2, y + 12, MUTED);
+    }
+
+    /** Your keys this moment against the bot's choice for the same moment, and the nearest mark's note. */
+    private void drawKeys(GuiGraphicsExtractor g, Font f, int w, int h, ReviewRecord r, ReviewAnalysis a, int i) {
+        int x0 = w - 132, y0 = h / 2 - 54;
+        g.fill(x0 - 4, y0 - 4, w - 2, y0 + 92, PANEL);
+        ReviewAnalysis.Suggestion s = a.suggestion(i);
+        int next = Math.min(r.ticks.size() - 1, i + 1);
+        ReviewRecord.Tick you = r.ticks.get(next);
+        int k = you.keys;
+        boolean fwd = (k & 1) != 0 && (k & 2) == 0, back = (k & 2) != 0 && (k & 1) == 0;
+        boolean left = (k & 4) != 0 && (k & 8) == 0, right = (k & 8) != 0 && (k & 4) == 0;
+        g.text(f, "You", x0, y0, TEXT, true);
+        keyRow(g, f, x0, y0 + 11, fwd, left, back, right, (k & 16) != 0, (k & 64) != 0, you.self.swingTime == -1, ON);
+        g.text(f, "Bot would", x0, y0 + 30, COACH, true);
+        if (s == null) {
+            g.text(f, "no data here", x0, y0 + 41, MUTED, true);
+        } else {
+            keyRow(g, f, x0, y0 + 41, s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5, COACH);
+            String turn = turnText(s.yawDeg(), s.pitchDeg());
+            g.text(f, "click " + Math.round(s.attackP() * 100) + "%  " + turn, x0, y0 + 58, MUTED, true);
+        }
+        ReviewRecord.Tick now = r.ticks.get(Math.max(0, i));
+        g.text(f, "HP you " + hp(now.self.health) + "  bot " + hp(now.opp.health), x0, y0 + 70, MUTED, true);
+        ReviewAnalysis.Mark m = nearest(a, i);
+        if (m != null) {
+            String note = symbol(m.kind()) + " " + label(m.kind());
+            if (m.kind() != ReviewAnalysis.Kind.MISS) note += String.format(" %+d%%", Math.round(m.delta() * 100));
+            if (m.forced()) note += " (hard to avoid)";
+            g.text(f, note, x0, y0 + 81, color(m.kind()), true);
+        }
+    }
+
+    private static String hp(float v) {
+        return String.format("%.1f", v / 2f) + "❤";
+    }
+
+    private static String turnText(double yaw, double pitch) {
+        String t = Math.abs(yaw) < 1 ? "" : (yaw > 0 ? "turn right " : "turn left ") + Math.round(Math.abs(yaw)) + "°";
+        if (Math.abs(pitch) >= 1) t += (t.isEmpty() ? "" : ", ") + (pitch > 0 ? "down " : "up ") + Math.round(Math.abs(pitch)) + "°";
+        return t.isEmpty() ? "hold aim" : t;
+    }
+
+    private static void keyRow(GuiGraphicsExtractor g, Font f, int x, int y, boolean w, boolean a, boolean s, boolean d,
+                               boolean jump, boolean sprint, boolean click, int on) {
+        String[] names = {"W", "A", "S", "D", "Jump", "Run", "Hit"};
+        boolean[] lit = {w, a, s, d, jump, sprint, click};
+        for (int i = 0; i < names.length; i++) {
+            int bw = f.width(names[i]) + 5;
+            g.fill(x, y, x + bw, y + 13, lit[i] ? on : OFF);
+            g.text(f, names[i], x + 3, y + 3, lit[i] ? 0xFF101010 : 0xFFE0E0E0, false);
+            x += bw + 2;
+        }
+    }
+
+    private static ReviewAnalysis.Mark nearest(ReviewAnalysis a, int i) {
+        for (ReviewAnalysis.Mark m : a.marks()) if (i >= m.from() && i <= m.to()) return m;
+        return null;
+    }
+
+    private void drawGraph(GuiGraphicsExtractor g, Font f, ReviewAnalysis a, int n, int mouseX, int mouseY) {
+        int x0 = graphX0, x1 = graphX1, y0 = graphY0, y1 = graphY1, gw = x1 - x0;
+        g.fill(x0 - 1, y0 - 1, x1 + 1, y1 + 1, OUTLINE);
+        for (int x = x0; x < x1; x++) {
+            int t = n <= 1 ? 0 : (int) Math.round((x - x0) / (double) (gw - 1) * (n - 1));
+            float v = a.shown.length == 0 ? 0.5f : a.shown[Math.min(a.shown.length - 1, t)];
+            int split = y0 + Math.round((y1 - y0) * (1f - v));
+            g.fill(x, y0, x + 1, split, DARK);
+            g.fill(x, split, x + 1, y1, LIGHT);
+        }
+        g.fill(x0, (y0 + y1) / 2, x1, (y0 + y1) / 2 + 1, 0x808A8A8A);
+        for (ReviewAnalysis.Mark m : a.marks()) {
+            int mx = tickX(m.index(), n);
+            g.fill(mx, y0, mx + 1, y1, color(m.kind()) & 0x90FFFFFF);
+            int bw = f.width(symbol(m.kind())) + 4;
+            g.fill(mx - bw / 2, y0 - 12, mx - bw / 2 + bw, y0 - 2, color(m.kind()));
+            g.text(f, symbol(m.kind()), mx - bw / 2 + 2, y0 - 11, 0xFF101010, false);
+            buttons.add(new Button(mx - bw / 2, y0 - 12, bw, 10, () -> playMark(m)));
+        }
+        int cx = tickX(ReviewClient.cursor, n);
+        g.fill(cx - 1, y0 - 2, cx + 1, y1 + 2, 0xFF4FD8FF);
+    }
+
+    private int tickX(double tick, int n) {
+        return graphX0 + (int) Math.round(n <= 1 ? 0 : tick / (n - 1) * (graphX1 - graphX0 - 1));
+    }
+
+    private static String clock(double ticks) {
+        double s = ticks / 20.0;
+        return String.format("%d:%04.1f", (int) (s / 60), s % 60);
+    }
+
+    private void drawControls(GuiGraphicsExtractor g, Font f, int w, int y, int n) {
+        int x = graphX0;
+        x = button(g, f, x, y, "Start", () -> ReviewClient.seek(0));
+        x = button(g, f, x, y, "< mark", () -> stepMark(-1));
+        x = button(g, f, x, y, ReviewClient.playing ? "Pause" : "Play", ReviewScreen::togglePlay);
+        x = button(g, f, x, y, "mark >", () -> stepMark(1));
+        x += 8;
+        for (double s : SPEEDS) {
+            String label = (s == 1 ? "1" : s == 0.5 ? "0.5" : "0.25") + "x";
+            x = button(g, f, x, y, label, () -> ReviewClient.speed = s, ReviewClient.speed == s);
+        }
+        x += 8;
+        x = button(g, f, x, y, "Bot aim view", () -> ReviewClient.coachView = !ReviewClient.coachView, ReviewClient.coachView);
+        int closeX = w - 24 - f.width("Close") - 8;
+        button(g, f, closeX, y, "Close", this::onClose);
+        String time = clock(ReviewClient.cursor) + " / " + clock(Math.max(0, n - 1));
+        g.text(f, time, graphX1 - f.width(time), graphY0 - 25, TEXT, true);
+        String help = "Space play  ←→ step  ↑↓ marks  B bot view";
+        if (x + 16 + f.width(help) < closeX - 8) g.text(f, help, x + 16, y + 4, MUTED, true);
+    }
+
+    private int button(GuiGraphicsExtractor g, Font f, int x, int y, String label, Runnable action) {
+        return button(g, f, x, y, label, action, false);
+    }
+
+    private int button(GuiGraphicsExtractor g, Font f, int x, int y, String label, Runnable action, boolean selected) {
+        int bw = f.width(label) + 8, bh = 16;
+        g.fill(x, y, x + bw, y + bh, selected ? 0xFF4FD8FF : 0xFF505050);
+        g.outline(x, y, bw, bh, 0xFF202020);
+        g.text(f, label, x + 4, y + 4, selected ? 0xFF101010 : TEXT, false);
+        buttons.add(new Button(x, y, bw, bh, action));
+        return x + bw + 3;
+    }
+
+    private static void togglePlay() {
+        if (!ReviewClient.playing && ReviewClient.cursor >= ReviewClient.ticks() - 1) ReviewClient.seek(0);
+        ReviewClient.playing = !ReviewClient.playing;
+        ReviewClient.stopAt = -1;
+    }
+
+    /** Jump a little before the moment and play up to it in slow motion, then hold there. */
+    private static void playMark(ReviewAnalysis.Mark m) {
+        ReviewClient.seek(Math.max(0, m.index() - 30));
+        ReviewClient.speed = 0.5;
+        ReviewClient.playing = true;
+        ReviewClient.stopAt = m.index();
+    }
+
+    private static void stepMark(int dir) {
+        List<ReviewAnalysis.Mark> marks = ReviewClient.analysis.marks();
+        int at = (int) Math.round(ReviewClient.cursor);
+        ReviewAnalysis.Mark pick = null;
+        for (ReviewAnalysis.Mark m : marks) {
+            if (dir > 0 && m.index() > at && (pick == null || m.index() < pick.index())) pick = m;
+            if (dir < 0 && m.index() < at - 2 && (pick == null || m.index() > pick.index())) pick = m;
+        }
+        if (pick != null) playMark(pick);
+    }
+
+    private void scrubTo(double mx) {
+        int n = ReviewClient.ticks();
+        double f = (mx - graphX0) / (double) Math.max(1, graphX1 - graphX0 - 1);
+        ReviewClient.seek(Math.max(0, Math.min(1, f)) * (n - 1));
+        ReviewClient.playing = false;
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent e, boolean doubleClick) {
+        if (e.button() != 0) return super.mouseClicked(e, doubleClick);
+        for (Button b : List.copyOf(buttons)) {
+            if (b.hit(e.x(), e.y())) {
+                b.action.run();
+                return true;
+            }
+        }
+        if (e.x() >= graphX0 && e.x() < graphX1 && e.y() >= graphY0 - 2 && e.y() <= graphY1 + 2) {
+            scrubbing = true;
+            scrubTo(e.x());
+            return true;
+        }
+        return super.mouseClicked(e, doubleClick);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent e, double dx, double dy) {
+        if (scrubbing) {
+            scrubTo(e.x());
+            return true;
+        }
+        return super.mouseDragged(e, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent e) {
+        scrubbing = false;
+        return super.mouseReleased(e);
+    }
+
+    @Override
+    public boolean mouseScrolled(double x, double y, double h, double v) {
+        ReviewClient.playing = false;
+        ReviewClient.seek(Math.round(ReviewClient.cursor) - Math.signum(v) * (hasShift() ? 20 : 1));
+        return true;
+    }
+
+    private static boolean hasShift() {
+        return net.minecraft.client.Minecraft.getInstance().hasShiftDown();
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent e) {
+        int step = hasShift() ? 20 : 1;
+        switch (e.key()) {
+            case InputConstants.KEY_SPACE -> togglePlay();
+            case InputConstants.KEY_RIGHT -> {
+                ReviewClient.playing = false;
+                ReviewClient.seek(Math.round(ReviewClient.cursor) + step);
+            }
+            case InputConstants.KEY_LEFT -> {
+                ReviewClient.playing = false;
+                ReviewClient.seek(Math.round(ReviewClient.cursor) - step);
+            }
+            case InputConstants.KEY_UP -> stepMark(1);
+            case InputConstants.KEY_DOWN -> stepMark(-1);
+            case InputConstants.KEY_B -> ReviewClient.coachView = !ReviewClient.coachView;
+            default -> {
+                return super.keyPressed(e);
+            }
+        }
+        return true;
+    }
+}
