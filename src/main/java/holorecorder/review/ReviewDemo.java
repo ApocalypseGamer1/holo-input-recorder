@@ -109,13 +109,19 @@ public final class ReviewDemo {
                     wait = 30;
                 }
                 case 16 -> shot(mc, "clip", 25);
-                case 17 -> shot(mc, "clip2", 5);
-                case 18 -> {
+                case 17 -> {
+                    ReviewClient.show(true);
+                    ReviewClient.seek(13);
+                    ReviewClient.playing = false;
+                    wait = 5;
+                }
+                case 18 -> shot(mc, "clip2", 5);
+                case 19 -> {
                     ReviewClient.endClip();
                     wait = 10;
                 }
-                case 19 -> shot(mc, "clipback", 5);
-                case 20 -> {
+                case 20 -> shot(mc, "clipback", 5);
+                case 21 -> {
                     ReviewClient.stop(mc, true);
                     wait = 10;
                 }
