@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import holorecorder.review.ReviewRecord.Fighter;
 import holorecorder.review.ReviewRecord.Tick;
@@ -60,11 +61,57 @@ class ReviewRecordTest {
         return r;
     }
 
+    // Same as the server's ReviewRecordTest.spearSample (spear-fixture.hrv comes from there).
+    static ReviewRecord spearSample() {
+        ReviewRecord r = sample();
+        r.mode = "spearmace";
+        r.coachName = "";
+        r.coachSha = "";
+        r.branches = new int[0];
+        r.yawBuckets = new float[0];
+        r.pitchBuckets = new float[0];
+        for (int i = 0; i < r.ticks.size(); i++) {
+            Tick t = r.ticks.get(i);
+            t.coach = null;
+            t.selfSpear.main = i == 2 ? 3 : 12;
+            t.selfSpear.off = 7;
+            t.selfSpear.offhandTotem = true;
+            t.selfSpear.totems = 4 - i;
+            t.selfSpear.pearls = 16;
+            t.selfSpear.charges = 300 - i;
+            t.selfSpear.apples = 64;
+            t.selfSpear.fallDistance = i * 2.5f;
+            t.selfSpear.strength = i == 1;
+            t.oppSpear.main = 3;
+            t.oppSpear.use = i == 1 ? 4 : 0;
+            t.oppSpear.gliding = i == 2;
+            t.oppSpear.absorption = 4f;
+            t.oppSpear.pearlCooldown = 20 - i;
+        }
+        return r;
+    }
+
     private static byte[] fixture() throws IOException {
-        try (InputStream in = ReviewRecordTest.class.getResourceAsStream("/review/fixture.hrv")) {
-            assertNotNull(in, "fixture.hrv missing");
+        return resource("/review/fixture.hrv");
+    }
+
+    private static byte[] resource(String name) throws IOException {
+        try (InputStream in = ReviewRecordTest.class.getResourceAsStream(name)) {
+            assertNotNull(in, name + " missing");
             return in.readAllBytes();
         }
+    }
+
+    @Test
+    void spearFixtureReadsAsSpearSample() throws IOException {
+        ReviewRecord a = ReviewRecord.fromBytes(resource("/review/spear-fixture.hrv"));
+        assertTrue(a.spear());
+        assertSame(spearSample(), a);
+    }
+
+    @Test
+    void spearSampleWritesTheServerBytes() throws IOException {
+        assertArrayEquals(resource("/review/spear-fixture.hrv"), spearSample().toBytes());
     }
 
     @Test
@@ -128,7 +175,31 @@ class ReviewRecordTest {
             assertEquals(x.keys, y.keys, "keys " + i);
             if (x.coach == null) assertNull(y.coach, "coach " + i);
             else assertArrayEquals(x.coach, y.coach, "coach " + i);
+            if (e.spear()) {
+                assertSpear(x.selfSpear, y.selfSpear, "self spear " + i);
+                assertSpear(x.oppSpear, y.oppSpear, "opp spear " + i);
+            }
         }
+    }
+
+    private static void assertSpear(ReviewRecord.Spear e, ReviewRecord.Spear a, String what) {
+        assertEquals(e.main, a.main, what);
+        assertEquals(e.off, a.off, what);
+        assertEquals(e.use, a.use, what);
+        assertEquals(e.gliding, a.gliding, what);
+        assertEquals(e.crouching, a.crouching, what);
+        assertEquals(e.offhandTotem, a.offhandTotem, what);
+        assertEquals(e.strength, a.strength, what);
+        assertEquals(e.speed, a.speed, what);
+        assertEquals(e.totems, a.totems, what);
+        assertEquals(e.pearls, a.pearls, what);
+        assertEquals(e.charges, a.charges, what);
+        assertEquals(e.apples, a.apples, what);
+        assertEquals(e.fallDistance, a.fallDistance, what);
+        assertEquals(e.absorption, a.absorption, what);
+        assertEquals(e.shieldCooldown, a.shieldCooldown, what);
+        assertEquals(e.pearlCooldown, a.pearlCooldown, what);
+        assertEquals(e.chargeCooldown, a.chargeCooldown, what);
     }
 
     private static void assertFighter(Fighter e, Fighter a, String what) {

@@ -11,14 +11,15 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 /**
- * One sword round as the reviewed player lived it: both fighters every server tick, the win chance from the player's side,
+ * One sword or spearmace round as the reviewed player lived it: both fighters every server tick, the win chance from the player's side,
  * the coach model's action distribution at the player's state and the player's own keys. The server writes the same
  * bytes (holoserver.review.ReviewRecord); change both together and bump {@link #VERSION}.
  *
  * <p>Gzip of big-endian: "HRV1", int version, header (see {@link #write}), int ticks, then one {@link Tick} per server tick.
+ * Version 2 (spearmace) adds a {@link Spear} block for each fighter at the end of every tick.
  */
 public final class ReviewRecord {
-    public static final int VERSION = 1;
+    public static final int VERSION = 1, VERSION_SPEAR = 2;
     public static final int OUTCOME_LOSS = 0, OUTCOME_WIN = 1, OUTCOME_DRAW = 2, OUTCOME_CUT = 3;
     /** {@link Fighter#swingTime} when the arm is not swinging. */
     public static final byte NOT_SWINGING = 127;
@@ -35,6 +36,61 @@ public final class ReviewRecord {
     /** Main hand, off hand, feet, legs, chest, head item ids ("" = empty), as the round started. */
     public String[] selfItems = empty(), oppItems = empty();
     public final List<Tick> ticks = new ArrayList<>();
+
+    /** Spearmace rounds carry a {@link Spear} block per fighter and tick (format version 2). */
+    public boolean spear() {
+        return "spearmace".equals(mode);
+    }
+
+    /** Spearmace state of one fighter, from server truth (never the hotbar layout). Item kinds are SpearItems.kind numbers. */
+    public static final class Spear {
+        /** Main hand, off hand and the item in use (0 = empty, not in use, or a kind the sim does not know). */
+        public int main, off, use;
+        public boolean gliding, crouching, offhandTotem, strength, speed;
+        public int totems, pearls, charges, apples;
+        public float fallDistance, absorption;
+        /** Item cooldowns left, in ticks. */
+        public int shieldCooldown, pearlCooldown, chargeCooldown;
+
+        void write(DataOutputStream out) throws IOException {
+            out.writeByte(main);
+            out.writeByte(off);
+            out.writeByte(use);
+            out.writeByte((gliding ? 1 : 0) | (crouching ? 2 : 0) | (offhandTotem ? 4 : 0) | (strength ? 8 : 0) | (speed ? 16 : 0));
+            out.writeByte(Math.min(255, totems));
+            out.writeByte(Math.min(255, pearls));
+            out.writeShort(Math.min(65535, charges));
+            out.writeByte(Math.min(255, apples));
+            out.writeFloat(fallDistance);
+            out.writeFloat(absorption);
+            out.writeByte(Math.min(255, shieldCooldown));
+            out.writeByte(Math.min(255, pearlCooldown));
+            out.writeByte(Math.min(255, chargeCooldown));
+        }
+
+        static Spear read(DataInputStream in) throws IOException {
+            Spear s = new Spear();
+            s.main = in.readUnsignedByte();
+            s.off = in.readUnsignedByte();
+            s.use = in.readUnsignedByte();
+            int flags = in.readUnsignedByte();
+            s.gliding = (flags & 1) != 0;
+            s.crouching = (flags & 2) != 0;
+            s.offhandTotem = (flags & 4) != 0;
+            s.strength = (flags & 8) != 0;
+            s.speed = (flags & 16) != 0;
+            s.totems = in.readUnsignedByte();
+            s.pearls = in.readUnsignedByte();
+            s.charges = in.readUnsignedShort();
+            s.apples = in.readUnsignedByte();
+            s.fallDistance = in.readFloat();
+            s.absorption = in.readFloat();
+            s.shieldCooldown = in.readUnsignedByte();
+            s.pearlCooldown = in.readUnsignedByte();
+            s.chargeCooldown = in.readUnsignedByte();
+            return s;
+        }
+    }
 
     public static final class Fighter {
         public double x, y, z;
@@ -83,6 +139,8 @@ public final class ReviewRecord {
         public byte[] coach;
         /** The player's keys this tick: forward, backward, left, right, jump, shift, sprint as bits 0..6. */
         public int keys;
+        /** Spearmace rounds only. */
+        public Spear selfSpear = new Spear(), oppSpear = new Spear();
     }
 
     private static String[] empty() {
@@ -122,7 +180,7 @@ public final class ReviewRecord {
 
     private void write(DataOutputStream out) throws IOException {
         out.writeBytes("HRV1");
-        out.writeInt(VERSION);
+        out.writeInt(spear() ? VERSION_SPEAR : VERSION);
         for (String s : new String[] {roundId, mode, arenaId}) out.writeUTF(s);
         out.writeLong(startMs);
         for (String s : new String[] {selfName, selfUuid, selfSkin, selfSkinSig, oppName, oppUuid, oppSkin, oppSkinSig}) out.writeUTF(s);
@@ -148,6 +206,10 @@ public final class ReviewRecord {
             boolean coach = t.coach != null && t.coach.length == width;
             out.writeBoolean(coach);
             if (coach) out.write(t.coach);
+            if (spear()) {
+                t.selfSpear.write(out);
+                t.oppSpear.write(out);
+            }
         }
     }
 
@@ -157,7 +219,7 @@ public final class ReviewRecord {
             in.readFully(magic);
             if (!"HRV1".equals(new String(magic, java.nio.charset.StandardCharsets.US_ASCII))) throw new IOException("not a review record");
             int version = in.readInt();
-            if (version != VERSION) throw new IOException("review record version " + version + ", this build reads " + VERSION);
+            if (version != VERSION && version != VERSION_SPEAR) throw new IOException("review record version " + version + ", this build reads " + VERSION + " and " + VERSION_SPEAR);
             ReviewRecord r = new ReviewRecord();
             r.roundId = in.readUTF();
             r.mode = in.readUTF();
@@ -195,6 +257,10 @@ public final class ReviewRecord {
                 if (in.readBoolean()) {
                     t.coach = new byte[width];
                     in.readFully(t.coach);
+                }
+                if (version == VERSION_SPEAR) {
+                    t.selfSpear = Spear.read(in);
+                    t.oppSpear = Spear.read(in);
                 }
                 r.ticks.add(t);
             }

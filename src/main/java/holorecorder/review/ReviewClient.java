@@ -191,7 +191,7 @@ public final class ReviewClient {
 
     /** The server can show Swordbot's play from a moment of this round. */
     static boolean clipsAvailable() {
-        return session >= 0 && !inClip() && ClientPlayNetworking.canSend(ReviewClipRequestPayload.TYPE);
+        return session >= 0 && !inClip() && (record == null || !record.spear()) && ClientPlayNetworking.canSend(ReviewClipRequestPayload.TYPE);
     }
 
     /** A clip the player asked for is on its way (a quiet fetch for the mistake box does not count). */
@@ -348,8 +348,16 @@ public final class ReviewClient {
     /** A move to show under the crosshair: a learned hit group, or a rule move the model does not cover. */
     record Chip(String name, String detail, boolean weak, int start, int end) {}
 
+    /** One side's spearmace moves (both sides read the same way). */
+    static List<Chip> spearChips(ReviewRecord r, boolean self) {
+        List<Chip> out = new java.util.ArrayList<>();
+        for (SpearMoves.Move m : SpearMoves.of(r, self)) out.add(new Chip(m.name(), m.detail(), false, m.start(), m.end()));
+        return out;
+    }
+
     /** The reviewed fighter's moves: each landed hit by its learned group, plus jump resets; rule names when the model is missing. */
     static List<Chip> chips(ReviewRecord r) {
+        if (r.spear()) return spearChips(r, true);
         List<Chip> out = new java.util.ArrayList<>();
         java.util.Set<Integer> grouped = new java.util.HashSet<>();
         List<ReviewMoves.Move> rules = ReviewMoves.of(r, true);
@@ -444,6 +452,7 @@ public final class ReviewClient {
         ghost = new RemotePlayer(level, new GameProfile(UUID.randomUUID(), name.isEmpty() ? "Bot" : name));
         ghost.setId(GHOST_ID);
         for (int i = 0; i < SLOTS.length; i++) ghost.setItemSlot(SLOTS[i], stack(record.oppItems[i]));
+        ghostMain = ghostOff = -1;
         poseGhost(0, 1f);
         level.addEntity(ghost);
     }
@@ -636,9 +645,52 @@ public final class ReviewClient {
         e.swing(InteractionHand.MAIN_HAND, e.getMainHandItem().getOrDefault(DataComponents.ATTACK_ANIMATION, SwingAnimation.DEFAULT), false);
     }
 
+    private static int ghostMain = -1, ghostOff = -1;
+
+    /** Spearmace: the bot's hands follow what it held each tick (mace, spear, pearls...). */
+    private static void ghostHands(int i) {
+        if (!record.spear()) return;
+        ReviewRecord.Spear s = record.ticks.get(i).oppSpear;
+        if (s.main != ghostMain) ghost.setItemSlot(EquipmentSlot.MAINHAND, spearStack(s.main, record.oppItems[0]));
+        if (s.off != ghostOff) ghost.setItemSlot(EquipmentSlot.OFFHAND, spearStack(s.off, record.oppItems[1]));
+        ghostMain = s.main;
+        ghostOff = s.off;
+    }
+
+    /** An item of a SpearItems kind; the round's starting item when it is of that kind. */
+    static ItemStack spearStack(int kind, String start) {
+        ItemStack first = stack(start);
+        if (kind == 0) return ItemStack.EMPTY;
+        String id = switch (kind) {
+            case 1 -> "minecraft:netherite_sword";
+            case 2 -> "minecraft:netherite_axe";
+            case 3 -> "minecraft:mace";
+            case 4 -> "minecraft:shield";
+            case 5 -> "minecraft:wind_charge";
+            case 6 -> "minecraft:ender_pearl";
+            case 7 -> "minecraft:totem_of_undying";
+            case 8 -> "minecraft:golden_apple";
+            case 9 -> "minecraft:enchanted_golden_apple";
+            case 10 -> "minecraft:elytra";
+            case 12 -> "minecraft:netherite_spear";
+            case 13, 14 -> "minecraft:splash_potion";
+            case 24 -> "minecraft:golden_carrot";
+            default -> "";
+        };
+        String startPath = start == null ? "" : start.substring(start.indexOf(':') + 1);
+        boolean same = switch (kind) {
+            case 1 -> startPath.endsWith("_sword");
+            case 2 -> startPath.endsWith("_axe");
+            case 12 -> startPath.endsWith("_spear");
+            default -> !id.isEmpty() && id.equals(start);
+        };
+        return same && !first.isEmpty() ? first : stack(id);
+    }
+
     private static void poseGhost(double at, float partial) {
         ReviewRecord.Fighter a = fighter(at, false), b = fighter(at + 1, false);
         int i = Math.max(0, Math.min(ticks() - 1, (int) Math.floor(at))), j = Math.min(ticks() - 1, i + 1);
+        ghostHands(i);
         double f = at - Math.floor(at);
         double x = lerp(f, a.x, b.x), y = lerp(f, a.y, b.y), z = lerp(f, a.z, b.z);
         float yaw = (float) (a.yaw + ReviewAnalysis.wrap(b.yaw - a.yaw) * f), pitch = (float) lerp(f, a.pitch, b.pitch);
