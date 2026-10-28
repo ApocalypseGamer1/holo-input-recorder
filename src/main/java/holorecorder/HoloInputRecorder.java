@@ -66,6 +66,9 @@ public final class HoloInputRecorder implements ClientModInitializer {
         PayloadTypeRegistry.serverboundPlay().register(ReviewEndPayload.TYPE, ReviewEndPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(ReviewClipPayload.TYPE, ReviewClipPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(ReviewClipRequestPayload.TYPE, ReviewClipRequestPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(holorecorder.protocol.LangPayload.TYPE, holorecorder.protocol.LangPayload.CODEC);
+        ClientPlayNetworking.registerGlobalReceiver(holorecorder.protocol.LangPayload.TYPE, (payload, context) ->
+                context.client().execute(() -> Tr.server(payload.code())));
         ClientPlayNetworking.registerGlobalReceiver(ReviewDataPayload.TYPE, (payload, context) ->
                 context.client().execute(() -> ReviewClient.receive(context.client(), payload)));
         ClientPlayNetworking.registerGlobalReceiver(ReviewClipPayload.TYPE, (payload, context) ->
@@ -93,6 +96,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             reset();
+            Tr.server(null);
             WinBarHud.reset();
             ReviewClient.reset();
         });
