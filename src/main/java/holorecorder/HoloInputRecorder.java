@@ -8,6 +8,8 @@ import holorecorder.protocol.ClientModsV2Payload;
 import holorecorder.protocol.IntegrityChallengePayload;
 import holorecorder.protocol.IntegrityResponsePayload;
 import holorecorder.protocol.RoundStatePayload;
+import holorecorder.protocol.ReviewClipPayload;
+import holorecorder.protocol.ReviewClipRequestPayload;
 import holorecorder.protocol.ReviewDataPayload;
 import holorecorder.protocol.ReviewEndPayload;
 import holorecorder.protocol.WinBarPayload;
@@ -62,8 +64,12 @@ public final class HoloInputRecorder implements ClientModInitializer {
         PayloadTypeRegistry.clientboundPlay().register(WinBarPayload.TYPE, WinBarPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(ReviewDataPayload.TYPE, ReviewDataPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(ReviewEndPayload.TYPE, ReviewEndPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ReviewClipPayload.TYPE, ReviewClipPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ReviewClipRequestPayload.TYPE, ReviewClipRequestPayload.CODEC);
         ClientPlayNetworking.registerGlobalReceiver(ReviewDataPayload.TYPE, (payload, context) ->
                 context.client().execute(() -> ReviewClient.receive(context.client(), payload)));
+        ClientPlayNetworking.registerGlobalReceiver(ReviewClipPayload.TYPE, (payload, context) ->
+                context.client().execute(() -> ReviewClient.receiveClip(payload)));
         ClientPlayNetworking.registerGlobalReceiver(RoundStatePayload.TYPE, (payload, context) ->
                 context.client().execute(() -> setRound(context.client(), payload)));
         ClientPlayNetworking.registerGlobalReceiver(IntegrityChallengePayload.TYPE, (payload, context) ->

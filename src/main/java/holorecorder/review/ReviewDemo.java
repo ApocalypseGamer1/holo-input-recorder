@@ -91,6 +91,31 @@ public final class ReviewDemo {
                 }
                 case 14 -> shot(mc, "scrub", 5);
                 case 15 -> {
+                    ReviewRecord r = ReviewClient.record;
+                    int from = ReviewClient.analysis.marks().isEmpty() ? 100 : ReviewClient.analysis.marks().get(0).from();
+                    ReviewRecord clip = new ReviewRecord();
+                    clip.oppName = r.oppName;
+                    clip.oppItems = r.oppItems;
+                    clip.ticks.addAll(r.ticks.subList(from, Math.min(r.ticks.size(), from + 41)));
+                    // HOLO_REVIEW_CLIP=<clip-test-TICK.hrv> from the review test server plays that real clip instead.
+                    String real = System.getenv("HOLO_REVIEW_CLIP");
+                    if (real != null && !real.isEmpty()) {
+                        clip = ReviewRecord.fromBytes(Files.readAllBytes(Path.of(real)));
+                        from = Integer.parseInt(Path.of(real).getFileName().toString().replaceAll("[^0-9]", ""));
+                        ReviewRecord.Fighter at = clip.ticks.get(0).self, was = r.ticks.get(from).self;
+                        shift(clip, was.x - at.x, was.y - at.y, was.z - at.z);
+                    }
+                    ReviewClient.playClip(clip, from);
+                    wait = 30;
+                }
+                case 16 -> shot(mc, "clip", 25);
+                case 17 -> shot(mc, "clip2", 5);
+                case 18 -> {
+                    ReviewClient.endClip();
+                    wait = 10;
+                }
+                case 19 -> shot(mc, "clipback", 5);
+                case 20 -> {
                     ReviewClient.stop(mc, true);
                     wait = 10;
                 }
@@ -99,6 +124,16 @@ public final class ReviewDemo {
         } catch (Exception e) {
             System.err.println("review demo failed: " + e);
             mc.stop();
+        }
+    }
+
+    private static void shift(ReviewRecord r, double dx, double dy, double dz) {
+        for (ReviewRecord.Tick t : r.ticks) {
+            for (ReviewRecord.Fighter f : new ReviewRecord.Fighter[] {t.self, t.opp}) {
+                f.x += dx;
+                f.y += dy;
+                f.z += dz;
+            }
         }
     }
 

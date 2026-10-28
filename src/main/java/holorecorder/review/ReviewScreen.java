@@ -86,12 +86,21 @@ final class ReviewScreen extends Screen {
         int w = width, h = height, n = ReviewClient.ticks(), i = (int) Math.floor(ReviewClient.cursor);
         float shown = a.shown.length == 0 ? 0.5f : a.shown[Math.max(0, Math.min(a.shown.length - 1, i))];
 
+        boolean clip = ReviewClient.inClip();
         drawGotHit(g, f, w, h);
-        drawBar(g, f, h, shown, r);
+        if (clip) drawDodged(g, f, w, h);
+        else drawBar(g, f, h, shown, r);
         drawAim(g, w, h, a.suggestion(i));
-        drawHeader(g, f, w, r, a);
+        if (clip) drawClipHeader(g, f, w, r);
+        else drawHeader(g, f, w, r, a);
         drawKeys(g, f, w, h, r, a, i);
-        drawCause(g, f, w, h, a, i);
+        if (!clip) drawCause(g, f, w, h, a, i);
+        String note = ReviewClient.clipNote();
+        if (note != null) {
+            int nw = f.width(note);
+            g.fill(w / 2 - nw / 2 - 4, 40, w / 2 + nw / 2 + 4, 52, PANEL);
+            g.centeredText(f, note, w / 2, 42, COACH);
+        }
 
         int panelY = h - 84;
         g.fill(0, panelY, w, h, PANEL);
@@ -99,8 +108,13 @@ final class ReviewScreen extends Screen {
         graphX1 = w - 24;
         graphY0 = panelY + 26;
         graphY1 = panelY + 54;
-        drawGraph(g, f, a, n, mouseX, mouseY);
-        drawControls(g, f, w, h - 24, n);
+        if (clip) {
+            drawTimeline(g, n);
+            drawClipControls(g, f, w, h - 24, n);
+        } else {
+            drawGraph(g, f, a, n, mouseX, mouseY);
+            drawControls(g, f, w, h - 24, n);
+        }
     }
 
     private void drawBar(GuiGraphicsExtractor g, Font f, int guiH, float pSelf, ReviewRecord r) {
@@ -167,8 +181,19 @@ final class ReviewScreen extends Screen {
             g.fill(w - e - 3, e + 3, w - e, h - e - 3, a);
         }
         float hearts = ReviewClient.lastHitHearts();
-        String text = "Bot hit you" + (hearts > 0 ? String.format("  -%.1f\u2764", hearts) : "");
+        String text = (ReviewClient.inClip() ? "Bot hit Swordbot" : "Bot hit you") + (hearts > 0 ? String.format("  -%.1f\u2764", hearts) : "");
         g.centeredText(f, text, w / 2, h / 2 - 22, (int) Math.round(255 * k) << 24 | 0xFF5050);
+    }
+
+    /** In a clip: Swordbot was not hit where you were. */
+    private void drawDodged(GuiGraphicsExtractor g, Font f, int w, int h) {
+        double since = ReviewClient.sinceDodged();
+        if (since >= 2 * GOT_HIT_TICKS) return;
+        double k = Math.min(1, 2 - since / GOT_HIT_TICKS);
+        String text = "Swordbot dodged a hit you took here";
+        int tw = f.width(text);
+        g.fill(w / 2 - tw / 2 - 3, h / 2 - 36, w / 2 + tw / 2 + 3, h / 2 - 24, (int) Math.round(0xB0 * k) << 24);
+        g.centeredText(f, text, w / 2, h / 2 - 34, (int) Math.round(255 * k) << 24 | 0x9BE060);
     }
 
     /** What caused the mark the cursor is in: shown while its moment replays. */
@@ -184,11 +209,31 @@ final class ReviewScreen extends Screen {
         java.util.List<String> lines = a.explain(m);
         int bw = f.width(title);
         for (String l : lines) bw = Math.max(bw, f.width(l));
-        int x0 = 46, y1 = h - 92, y0 = y1 - 14 - lines.size() * 10;
+        boolean clip = m.kind() != ReviewAnalysis.Kind.BEST && ReviewClient.clipsAvailable();
+        String play = ReviewClient.clipPending() ? "Swordbot is playing..." : "\u25B6 Swordbot's play from here";
+        if (clip) bw = Math.max(bw, f.width(play) + 8);
+        int x0 = 46, y1 = h - 92, y0 = y1 - 14 - lines.size() * 10 - (clip ? 18 : 0);
         g.fill(x0 - 4, y0 - 4, x0 + bw + 4, y1, PANEL);
         g.fill(x0 - 4, y0 - 4, x0 - 2, y1, color(m.kind()));
         g.text(f, title, x0, y0, color(m.kind()), true);
         for (int k = 0; k < lines.size(); k++) g.text(f, lines.get(k), x0, y0 + 13 + k * 10, TEXT, true);
+        if (clip) button(g, f, x0, y1 - 18, play, () -> ReviewClient.requestClip(clipStart(a)), ReviewClient.clipPending());
+    }
+
+    /** Where Swordbot's play starts: the start of the mark the cursor is in, else the cursor. */
+    static int clipStart(ReviewAnalysis a) {
+        int i = (int) Math.floor(ReviewClient.cursor);
+        ReviewAnalysis.Mark m = a.markAt(i);
+        return m == null || m.kind() == ReviewAnalysis.Kind.BEST ? i : Math.min(m.from(), m.index());
+    }
+
+    private void drawClipHeader(GuiGraphicsExtractor g, Font f, int w, ReviewRecord r) {
+        String title = "Swordbot's play from " + clock(ReviewClient.clipFrom);
+        String sub = "Swordbot plays in your place. " + r.oppName + " moves as it did and does not react.";
+        int tw = Math.max(f.width(title), f.width(sub));
+        g.fill(w / 2 - tw / 2 - 4, 2, w / 2 + tw / 2 + 4, 14 + f.lineHeight, PANEL);
+        g.centeredText(f, title, w / 2, 4, COACH);
+        g.centeredText(f, sub, w / 2, 5 + f.lineHeight, MUTED);
     }
 
     private void drawHeader(GuiGraphicsExtractor g, Font f, int w, ReviewRecord r, ReviewAnalysis a) {
@@ -226,23 +271,30 @@ final class ReviewScreen extends Screen {
         int k = you.keys;
         boolean fwd = (k & 1) != 0 && (k & 2) == 0, back = (k & 2) != 0 && (k & 1) == 0;
         boolean left = (k & 4) != 0 && (k & 8) == 0, right = (k & 8) != 0 && (k & 4) == 0;
-        g.text(f, "You", x0, y0, TEXT, true);
+        boolean clip = ReviewClient.inClip();
+        g.text(f, clip ? "Swordbot pressed" : "You", x0, y0, clip ? COACH : TEXT, true);
         boolean[] youKeys = {fwd, left, back, right, (k & 16) != 0, (k & 64) != 0, you.self.swingTime == -1};
-        keyRow(g, f, x0, y0 + 11, youKeys, null, ON);
-        g.text(f, "Swordbot would", x0, y0 + 30, COACH, true);
-        if (s == null) {
+        keyRow(g, f, x0, y0 + 11, youKeys, null, clip ? COACH : ON);
+        if (clip) {
+            g.text(f, f.plainSubstrByWidth(r.oppName, 124), x0, y0 + 30, MUTED, true);
+            g.text(f, "moves as it did", x0, y0 + 41, MUTED, true);
+        } else if (s == null) {
+            g.text(f, "Swordbot would", x0, y0 + 30, COACH, true);
             g.text(f, "no data here", x0, y0 + 41, MUTED, true);
         } else {
+            g.text(f, "Swordbot would", x0, y0 + 30, COACH, true);
             boolean[] bots = {s.forward(), s.left(), s.back(), s.right(), s.jump(), s.sprint(), s.attackP() >= 0.5};
             keyRow(g, f, x0, y0 + 41, bots, youKeys, COACH);
             String turn = turnText(s.yawDeg(), s.pitchDeg());
             g.text(f, "click " + Math.round(s.attackP() * 100) + "%  " + turn, x0, y0 + 58, MUTED, true);
         }
         ReviewRecord.Tick now = r.ticks.get(Math.max(0, i));
-        g.text(f, "HP you " + hp(now.self.health) + "  bot " + hp(now.opp.health), x0, y0 + 70, MUTED, true);
+        if (clip) g.text(f, "Swordbot HP " + hp(now.self.health), x0, y0 + 70, MUTED, true);
+        else g.text(f, "HP you " + hp(now.self.health) + "  bot " + hp(now.opp.health), x0, y0 + 70, MUTED, true);
         double now2 = ReviewClient.rangeNow(), yours = ReviewClient.rangeAtYourHit(), bots = ReviewClient.rangeAtBotHit();
         g.text(f, String.format("Range now %.1f", now2), x0, y0 + 81, now2 <= 3.0 ? ON : MUTED, true);
-        g.text(f, "Your hit " + range(yours) + "  bot's " + range(bots), x0, y0 + 92, MUTED, true);
+        if (clip) g.text(f, "Hits " + ReviewClient.hitsSoFar(true) + "  taken " + ReviewClient.hitsSoFar(false), x0, y0 + 92, MUTED, true);
+        else g.text(f, "Your hit " + range(yours) + "  bot's " + range(bots), x0, y0 + 92, MUTED, true);
     }
 
     private static String range(double v) {
@@ -294,6 +346,35 @@ final class ReviewScreen extends Screen {
         g.fill(cx - 1, y0 - 2, cx + 1, y1 + 2, 0xFF4FD8FF);
     }
 
+    /** Swordbot's play has no win chance: a plain time line. */
+    private void drawTimeline(GuiGraphicsExtractor g, int n) {
+        int y0 = graphY0 + 8, y1 = graphY1 - 8;
+        g.fill(graphX0 - 1, y0 - 1, graphX1 + 1, y1 + 1, OUTLINE);
+        g.fill(graphX0, y0, graphX1, y1, DARK);
+        int cx = tickX(ReviewClient.cursor, n);
+        g.fill(graphX0, y0, cx, y1, 0xFF2A6F86);
+        g.fill(cx - 1, y0 - 4, cx + 1, y1 + 4, COACH);
+    }
+
+    private void drawClipControls(GuiGraphicsExtractor g, Font f, int w, int y, int n) {
+        int x = graphX0;
+        x = button(g, f, x, y, "Back to your round", ReviewClient::endClip);
+        x += 8;
+        x = button(g, f, x, y, "Start", () -> ReviewClient.seek(0));
+        x = button(g, f, x, y, ReviewClient.playing ? "Pause" : "Play", ReviewScreen::togglePlay);
+        x += 8;
+        for (double s : SPEEDS) {
+            String label = (s == 1 ? "1" : s == 0.5 ? "0.5" : "0.25") + "x";
+            x = button(g, f, x, y, label, () -> ReviewClient.speed = s, ReviewClient.speed == s);
+        }
+        int closeX = w - 24 - f.width("Close") - 8;
+        button(g, f, closeX, y, "Close", this::onClose);
+        String time = clock(ReviewClient.clipFrom + ReviewClient.cursor) + "   " + clock(ReviewClient.cursor) + " / " + clock(Math.max(0, n - 1));
+        g.text(f, time, graphX1 - f.width(time), graphY0 - 25, TEXT, true);
+        String help = "Space play  \u2190\u2192 step  Esc back";
+        if (x + 16 + f.width(help) < closeX - 8) g.text(f, help, x + 16, y + 4, MUTED, true);
+    }
+
     private int tickX(double tick, int n) {
         return graphX0 + (int) Math.round(n <= 1 ? 0 : tick / (n - 1) * (graphX1 - graphX0 - 1));
     }
@@ -321,7 +402,7 @@ final class ReviewScreen extends Screen {
         button(g, f, closeX, y, "Close", this::onClose);
         String time = clock(ReviewClient.cursor) + " / " + clock(Math.max(0, n - 1));
         g.text(f, time, graphX1 - f.width(time), graphY0 - 25, TEXT, true);
-        String help = "Space play  ←→ step  ↑↓ marks  B bot view";
+        String help = "Space play  ←→ step  ↑↓ marks  B bot view" + (ReviewClient.clipsAvailable() ? "  P Swordbot's play" : "");
         if (x + 16 + f.width(help) < closeX - 8) g.text(f, help, x + 16, y + 4, MUTED, true);
     }
 
@@ -416,6 +497,10 @@ final class ReviewScreen extends Screen {
     @Override
     public boolean keyPressed(KeyEvent e) {
         int step = hasShift() ? 20 : 1;
+        if (ReviewClient.inClip() && e.key() == InputConstants.KEY_ESCAPE) {
+            ReviewClient.endClip();
+            return true;
+        }
         switch (e.key()) {
             case InputConstants.KEY_SPACE -> togglePlay();
             case InputConstants.KEY_RIGHT -> {
@@ -429,6 +514,7 @@ final class ReviewScreen extends Screen {
             case InputConstants.KEY_UP -> stepMark(1);
             case InputConstants.KEY_DOWN -> stepMark(-1);
             case InputConstants.KEY_B -> ReviewClient.coachView = !ReviewClient.coachView;
+            case InputConstants.KEY_P -> ReviewClient.requestClip(clipStart(ReviewClient.analysis));
             default -> {
                 return super.keyPressed(e);
             }

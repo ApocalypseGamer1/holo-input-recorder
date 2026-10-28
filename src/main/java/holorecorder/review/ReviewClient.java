@@ -1,6 +1,8 @@
 package holorecorder.review;
 
 import com.mojang.authlib.GameProfile;
+import holorecorder.protocol.ReviewClipPayload;
+import holorecorder.protocol.ReviewClipRequestPayload;
 import holorecorder.protocol.ReviewDataPayload;
 import holorecorder.protocol.ReviewEndPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -53,6 +55,13 @@ public final class ReviewClient {
     private static long lastNanos;
     private static int lastWhole = -1;
     private static double coachYawOff, coachPitchOff;
+    /** "Swordbot's play": while a clip of the coach in your place plays, the round waits here (null when no clip plays). */
+    private static ReviewRecord round;
+    private static ReviewAnalysis roundAnalysis;
+    private static double roundCursor;
+    static int clipFrom = -1;
+    private static String clipNote;
+    private static long clipAsked, clipNoteAt;
 
     private ReviewClient() {
     }
@@ -116,6 +125,7 @@ public final class ReviewClient {
         lastNanos = 0;
         lastWhole = -1;
         coachYawOff = coachPitchOff = 0;
+        clearClip();
         oppUuid = parseUuid(record.oppUuid);
         prepare();
         spawnGhost(mc.level);
@@ -126,6 +136,11 @@ public final class ReviewClient {
     public static void stop(Minecraft mc, boolean tellServer) {
         if (!active) return;
         active = false;
+        if (round != null) {
+            record = round;
+            analysis = roundAnalysis;
+        }
+        clearClip();
         if (tellServer) send(new ReviewEndPayload(session));
         if (ghost != null && mc.level != null) mc.level.removeEntity(ghost.getId(), Entity.RemovalReason.DISCARDED);
         ghost = null;
@@ -140,6 +155,128 @@ public final class ReviewClient {
         record = null;
         analysis = null;
         session = -1;
+        clearClip();
+    }
+
+    private static void clearClip() {
+        round = null;
+        roundAnalysis = null;
+        clipFrom = -1;
+        clipNote = null;
+        clipAsked = 0;
+    }
+
+    static boolean inClip() {
+        return round != null;
+    }
+
+    /** The server can show Swordbot's play from a moment of this round. */
+    static boolean clipsAvailable() {
+        return session >= 0 && !inClip() && ClientPlayNetworking.canSend(ReviewClipRequestPayload.TYPE);
+    }
+
+    static boolean clipPending() {
+        return clipAsked != 0;
+    }
+
+    /** What to tell the player about the last request, or null. */
+    static String clipNote() {
+        if (clipPending()) return "Swordbot is playing it...";
+        return clipNote != null && System.nanoTime() - clipNoteAt < 6_000_000_000L ? clipNote : null;
+    }
+
+    private static void note(String text) {
+        clipNote = text;
+        clipNoteAt = System.nanoTime();
+    }
+
+    static void requestClip(int tick) {
+        if (!clipsAvailable() || clipPending()) return;
+        clipAsked = System.nanoTime();
+        clipNote = null;
+        ClientPlayNetworking.send(new ReviewClipRequestPayload(session, Math.max(0, tick)));
+    }
+
+    public static void receiveClip(ReviewClipPayload p) {
+        if (!active || p.session() != session || !clipPending()) return;
+        clipAsked = 0;
+        if (p.status() != ReviewClipPayload.OK) {
+            note(clipError(p.status()));
+            return;
+        }
+        ReviewRecord clip;
+        try {
+            clip = ReviewRecord.fromBytes(p.data());
+        } catch (IOException e) {
+            LOG.warn("holorec: review clip not readable: {}", e.toString());
+            note("Swordbot's play could not be opened. Update the Holoplayer mod.");
+            return;
+        }
+        if (clip.ticks.size() < 2) {
+            note("Swordbot's play stopped at once. Try another moment.");
+            return;
+        }
+        playClip(clip, p.tick());
+    }
+
+    static String clipError(int status) {
+        return switch (status) {
+            case ReviewClipPayload.BUSY -> "Swordbot is still busy. Try again.";
+            case ReviewClipPayload.NO_BOT -> "The bot is gone, so Swordbot cannot play here.";
+            case ReviewClipPayload.TOO_LATE -> "Too near the end of the round. Pick an earlier moment.";
+            case ReviewClipPayload.FAILED -> "Swordbot's play stopped. Try again.";
+            default -> "Swordbot's play is not available for this round.";
+        };
+    }
+
+    /** Plays {@code clip} (Swordbot in your place from round tick {@code from}) in slow motion; {@link #endClip} goes back. */
+    static void playClip(ReviewRecord clip, int from) {
+        if (!inClip()) {
+            round = record;
+            roundAnalysis = analysis;
+            roundCursor = cursor;
+        }
+        clipFrom = from;
+        record = clip;
+        analysis = ReviewAnalysis.of(clip);
+        prepare();
+        seek(0);
+        lastWhole = -1;
+        speed = 0.5;
+        playing = true;
+        coachView = false;
+    }
+
+    /** In a clip: ticks (up to 20) since a hit you took in the round that Swordbot did not take at that moment (large when none). */
+    static double sinceDodged() {
+        if (round == null) return 1e9;
+        int c = (int) Math.floor(cursor);
+        for (int k = c; k >= Math.max(0, c - 19); k--) {
+            int j = clipFrom + k;
+            if (j >= round.ticks.size() || !round.ticks.get(j).self.hurt) continue;
+            boolean took = false;
+            for (int q = Math.max(0, k - 1); q <= Math.min(ticks() - 1, k + 1); q++) took |= record.ticks.get(q).self.hurt;
+            if (!took) return cursor - k;
+        }
+        return 1e9;
+    }
+
+    /** Hits up to the cursor: on the bot ({@code onBot}) or on you (in a clip, on Swordbot). */
+    static int hitsSoFar(boolean onBot) {
+        int c = 0, end = Math.min(ticks() - 1, (int) Math.floor(cursor));
+        for (int i = 0; i <= end; i++) if (onBot ? record.ticks.get(i).opp.hurt : record.ticks.get(i).self.hurt) c++;
+        return c;
+    }
+
+    static void endClip() {
+        if (!inClip()) return;
+        record = round;
+        analysis = roundAnalysis;
+        round = null;
+        roundAnalysis = null;
+        prepare();
+        seek(roundCursor);
+        playing = false;
     }
 
     private static void send(ReviewEndPayload p) {
@@ -240,6 +377,10 @@ public final class ReviewClient {
         long now = System.nanoTime();
         double dt = lastNanos == 0 ? 0 : Math.min(0.25, (now - lastNanos) / 1e9);
         lastNanos = now;
+        if (clipPending() && now - clipAsked > 10_000_000_000L) {
+            clipAsked = 0;
+            note("No answer from the server. Try again.");
+        }
         int n = ticks();
         if (playing) {
             double before = cursor;
