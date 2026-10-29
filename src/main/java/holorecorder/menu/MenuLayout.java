@@ -56,7 +56,7 @@ public final class MenuLayout {
                          List<Heading> headings, int contentHeight, int maxScroll, Rect back, Rect close) {
     }
 
-    public static final int GAP = 4, PAD = 8, ICON = 20, CARD_PAD = 5, ICON_GAP = 6, MIN_CARD = 128, MAX_CARD = 210,
+    public static final int GAP = 4, PAD = 8, ICON = 20, CARD_PAD = 5, ICON_GAP = 6, MIN_CARD = 128, MAX_CARD = 210, WIDER_CARD = 260, WIDE_CARD = 320,
             SCROLLBAR = 6, MAX_PANEL = 560;
 
     private MenuLayout() {
@@ -99,7 +99,7 @@ public final class MenuLayout {
             for (int l = 0; l < lines; l++) {
                 int from = l * per, to = Math.min(n, from + per), cnt = to - from;
                 if (cnt <= 0) break;
-                int w = Math.min(MAX_CARD, (innerW - (cnt - 1) * GAP) / cnt);
+                int w = Math.min(cnt == 1 ? WIDE_CARD : cnt == 2 ? WIDER_CARD : MAX_CARD, (innerW - (cnt - 1) * GAP) / cnt);
                 int total = cnt * w + (cnt - 1) * GAP;
                 int x0 = (innerW - total) / 2;
                 int textX = CARD_PAD + ICON + ICON_GAP;

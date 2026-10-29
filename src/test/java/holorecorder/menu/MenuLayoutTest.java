@@ -95,6 +95,35 @@ class MenuLayoutTest {
     }
 
     @Test
+    void theNewShortMenusFitEveryScreenInEveryLanguage() {
+        // Play (6 modes + 2 others), a mode screen (3 tiles), the main menu (5 tiles) and the pause row.
+        int[][] shapes = {{6, 2}, {3}, {5}, {1}};
+        for (var lang : LANGS.entrySet()) {
+            for (int[] s : SCREENS) {
+                for (int[] shape : shapes) {
+                    List<MenuLayout.Item> items = new ArrayList<>();
+                    int n = 0;
+                    for (int row = 0; row < shape.length; row++) {
+                        for (int i = 0; i < shape[row]; i++, n++) items.add(new MenuLayout.Item(row * 9 + i, row));
+                    }
+                    MenuLayout.Meter m = meter(lang.getValue(), Map.of());
+                    MenuLayout.Result r = MenuLayout.compute(s[0], s[1], m, items, Set.of(0, 1), 150, 40);
+                    check(lang.getKey() + " " + s[0] + "x" + s[1] + " " + n + " tiles", s[0], s[1], r, m, n);
+                }
+            }
+        }
+    }
+
+    @Test
+    void aSingleTileGetsAWiderCardThanARowOfSix() {
+        MenuLayout.Meter m = meter(LANGS.get("en"), Map.of());
+        MenuLayout.Result one = MenuLayout.compute(1920, 1080, m, List.of(new MenuLayout.Item(13, 1)), Set.of(), -1, 40);
+        MenuLayout.Result six = MenuLayout.compute(1920, 1080, m, playItems(), Set.of(), -1, 40);
+        assertTrue(one.cards().get(0).box().w() > six.cards().get(2).box().w());
+        assertTrue(one.cards().get(0).box().w() <= MenuLayout.WIDE_CARD);
+    }
+
+    @Test
     void widerScreensKeepRowsTogetherNarrowOnesWrapThem() {
         MenuLayout.Meter m = meter(LANGS.get("en"), Map.of());
         MenuLayout.Result wide = MenuLayout.compute(1920, 1080, m, playItems(), Set.of(), -1, 40);
