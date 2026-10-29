@@ -101,6 +101,7 @@ final class ReviewScreen extends Screen {
         else drawHeader(g, f, w, r, a);
         drawKeys(g, f, w, h, r, a, i);
         if (!clip) drawCause(g, f, w, h, a, i);
+        drawGotHitText(g, f, w, h);
         String note = ReviewClient.clipNote();
         if (note != null) {
             int nw = f.width(note);
@@ -186,9 +187,18 @@ final class ReviewScreen extends Screen {
             g.fill(e, e + 3, e + 3, h - e - 3, a);
             g.fill(w - e - 3, e + 3, w - e, h - e - 3, a);
         }
+    }
+
+    /** The hearts lost, drawn after the cause box so long languages are never hidden behind it. */
+    private void drawGotHitText(GuiGraphicsExtractor g, Font f, int w, int h) {
+        double since = ReviewClient.sinceYouGotHit();
+        if (since >= GOT_HIT_TICKS) return;
+        double k = 1 - since / GOT_HIT_TICKS;
         float hearts = ReviewClient.lastHitHearts();
         String text = (ReviewClient.inClip() && ReviewClient.showingSwordbot ? Tr.t("Bot hit {0}", ReviewClient.botName()) : Tr.t("Bot hit you")) + (hearts > 0 ? String.format("  -%.1f\u2764", hearts) : "");
-        g.centeredText(f, text, w / 2, h / 2 - 22, (int) Math.round(255 * k) << 24 | 0xFF5050);
+        int tw = f.width(text), y = h / 2 - 22;
+        g.fill(w / 2 - tw / 2 - 3, y - 2, w / 2 + tw / 2 + 3, y + 10, (int) Math.round(0xB0 * k) << 24);
+        g.centeredText(f, text, w / 2, y, (int) Math.round(255 * k) << 24 | 0xFF5050);
     }
 
     /** In a clip: Swordbot was not hit where you were. */
