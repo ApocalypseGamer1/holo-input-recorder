@@ -44,7 +44,7 @@ final class ReviewScreen extends Screen {
 
     @Override
     public void removed() {
-        ReviewClient.stop(minecraft, true);
+        ReviewClient.stop(minecraft, true, false);   // the screen is already closing: setScreen(null) here breaks fabric-screen-api
     }
 
     static int color(ReviewAnalysis.Kind k) {
