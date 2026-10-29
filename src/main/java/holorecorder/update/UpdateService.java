@@ -25,17 +25,18 @@ import java.util.function.Consumer;
  */
 public final class UpdateService {
     private static final Logger LOG = LoggerFactory.getLogger("holorec-client");
+    public static final String DOWNLOAD_PAGE = "https://apocalypsegamer1.github.io/holoplayer";
 
-    public enum Phase { IDLE, DOWNLOADING, DONE, FAILED }
+    /** MANUAL: downloaded and verified, but the player must swap the file by hand. */
+    public enum Phase { IDLE, DOWNLOADING, DONE, FAILED, MANUAL }
 
-    /** A newer version exists. {@code build} is null when this Minecraft version has no automatic update. */
-    public record Available(String current, String latest, UpdateManifest.Build build, PackInstance pack) {
+    /** A newer version exists. {@code build} is null when this Minecraft version has no automatic update; {@code file} is the jar's name, if known. */
+    public record Available(String current, String latest, UpdateManifest.Build build, PackInstance pack, String file) {
     }
 
     private static volatile Available available;
     private static volatile Phase phase = Phase.IDLE;
     private static volatile int percent;
-    private static volatile String pendingVersion = "";
     private static final AtomicBoolean busy = new AtomicBoolean();
 
     private UpdateService() {
@@ -85,19 +86,26 @@ public final class UpdateService {
         }).orElse(null);
     }
 
-    /** Start-up work on a daemon thread: report the last swap, finish a pending one, then ask for the manifest. */
-    public static void startup(Minecraft mc, Consumer<String> updatedTo, Consumer<Available> found) {
+    /** The mods folder, or null when the mod does not run from a jar. */
+    public static Path modsDir() {
+        Path jar = ownJar();
+        return jar == null ? null : jar.getParent();
+    }
+
+    /** Start-up work on a daemon thread: tidy up, pick up a download that still needs a manual step, then ask for the manifest. */
+    public static void startup(Minecraft mc, Consumer<Available> found) {
         if (!enabled()) return;
         Thread.ofPlatform().daemon().name("holo-update-check").start(() -> {
             try {
-                Path jar = ownJar();
-                if (jar != null) {
-                    Path dir = UpdateSwap.updateDir(jar.getParent());
-                    if (Files.isDirectory(dir)) {
-                        String shown = UpdateSwap.resume(dir, ownVersion());
-                        UpdateSwap.Pending p = UpdateSwap.readPending(dir);
-                        pendingVersion = p == null ? "" : p.version();
-                        if (shown != null) mc.execute(() -> updatedTo.accept(shown));
+                Path mods = modsDir();
+                if (mods != null) {
+                    UpdateSwap.Staged staged = UpdateSwap.cleanup(mods, ownVersion());
+                    PackInstance pack = PackInstance.detect(FabricLoader.getInstance().getGameDir());
+                    if (staged != null && pack == PackInstance.NONE) {
+                        Available a = new Available(ownVersion(), staged.version(), null, pack, staged.file());
+                        available = a;
+                        phase = Phase.MANUAL;
+                        mc.execute(() -> found.accept(a));
                     }
                 }
                 Available a = fetch();
@@ -132,9 +140,12 @@ public final class UpdateService {
         }
         String running = ownVersion();
         if (!UpdateVersion.isNewer(m.version(), running)) return null;
+        Available prev = available;
+        if (prev != null && prev.latest().equals(m.version()) && (phase == Phase.DONE || phase == Phase.MANUAL)) return null;
         String key = UpdateManifest.buildKey(minecraftVersion());
-        Available a = new Available(running, m.version(), key == null ? null : m.build(key), PackInstance.detect(FabricLoader.getInstance().getGameDir()));
-        if (m.version().equals(pendingVersion)) phase = Phase.DONE;
+        UpdateManifest.Build build = key == null ? null : m.build(key);
+        Available a = new Available(running, m.version(), build, PackInstance.detect(FabricLoader.getInstance().getGameDir()), build == null ? null : build.file());
+        if (phase != Phase.DOWNLOADING) phase = Phase.IDLE;
         available = a;
         return a;
     }
@@ -142,15 +153,15 @@ public final class UpdateService {
     /** Client thread. Starts the download once; a second call while one runs (or after it finished) does nothing. */
     public static void startDownload(Minecraft mc, Consumer<String> done) {
         Available a = available;
-        if (a == null || a.build() == null || a.pack() != PackInstance.NONE || phase == Phase.DONE) return;
+        if (a == null || a.build() == null || a.pack() != PackInstance.NONE || phase == Phase.DONE || phase == Phase.MANUAL) return;
         if (!busy.compareAndSet(false, true)) return;
         phase = Phase.DOWNLOADING;
         percent = 0;
         Thread.ofPlatform().daemon().name("holo-update-download").start(() -> {
             try {
-                download(a);
-                phase = Phase.DONE;
-                mc.execute(() -> done.accept(a.latest()));
+                boolean swapped = download(a);
+                phase = swapped ? Phase.DONE : Phase.MANUAL;
+                if (swapped) mc.execute(() -> done.accept(a.latest()));
             } catch (IOException | RuntimeException e) {
                 LOG.warn("update: download failed: {}", e.toString());
                 phase = Phase.FAILED;
@@ -160,28 +171,27 @@ public final class UpdateService {
         });
     }
 
-    private static void download(Available a) throws IOException {
+    /** Downloads, verifies and stages the jar, then tries the rename swap. True when the new jar is in place; false when a manual step is left. */
+    private static boolean download(Available a) throws IOException {
         Path jar = ownJar();
         if (jar == null) throw new IOException("not running from a jar file");
         UpdateManifest.Build b = a.build();
-        Path dir = UpdateSwap.updateDir(jar.getParent());
+        Path mods = jar.getParent();
+        Path dir = UpdateSwap.updateDir(mods);
         Files.createDirectories(dir);
         Path part = dir.resolve(b.file() + ".part");
-        Path verified = dir.resolve(b.file() + ".verified");
+        Path staged = mods.resolve(b.file() + ".new");
         try {
             try (OutputStream out = Files.newOutputStream(part)) {
                 UpdateHttp.get(UpdateManifest.jarUrl(b), b.size(), out, n -> percent = (int) Math.min(99, 100L * n / b.size()));
             }
             UpdateVerify.check(Files.readAllBytes(part), b, a.latest());
-            Files.move(part, verified, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(part, staged, StandardCopyOption.REPLACE_EXISTING);
         } finally {
             Files.deleteIfExists(part);
         }
-        UpdateSwap.Pending pending = new UpdateSwap.Pending(a.latest(), b.file(), b.sha256(), jar.toString());
-        UpdateSwap.writePending(dir, pending);
-        pendingVersion = a.latest();
-        if (!UpdateSwap.install(dir, pending)) throw new IOException("could not schedule the swap");
         percent = 100;
+        return UpdateSwap.trySwap(jar, staged, mods.resolve(b.file()));
     }
 
     /** Text for a pack-managed instance, naming the launcher the player uses. */

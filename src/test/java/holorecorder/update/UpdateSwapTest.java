@@ -4,98 +4,123 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Stream;
+import java.util.zip.ZipFile;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** The file moves, on a temporary folder. The Windows helper itself is never started here. */
+/** The rename swap and the start-up tidy-up, on a temporary mods folder. Nothing is started and nothing uses the network. */
 class UpdateSwapTest {
     @TempDir Path mods;
 
-    private static final byte[] NEW = "new jar bytes".getBytes(StandardCharsets.UTF_8);
-
-    private Path dir() throws IOException {
-        return Files.createDirectories(UpdateSwap.updateDir(mods));
+    private static byte[] jar(String version) throws IOException {
+        return UpdateVerifyTest.jar("{\"id\":\"holo_input_recorder\",\"version\":\"" + version + "\"}");
     }
 
-    private UpdateSwap.Pending stage(Path dir, String oldName) throws IOException {
-        Path old = mods.resolve(oldName);
-        Files.write(old, "old jar bytes".getBytes(StandardCharsets.UTF_8));
-        UpdateSwap.Pending p = new UpdateSwap.Pending("1.13.0", "holo-input-recorder-1.13.0.jar", UpdateVerify.sha256(NEW), old.toString());
-        Files.write(UpdateSwap.verifiedFile(dir, p), NEW);
-        UpdateSwap.writePending(dir, p);
-        return p;
+    private Path put(String name, byte[] bytes) throws IOException {
+        return Files.write(mods.resolve(name), bytes);
     }
 
-    private List<String> jars() throws IOException {
+    private List<String> names() throws IOException {
         try (Stream<Path> s = Files.list(mods)) {
-            return s.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".jar")).sorted().toList();
+            return s.map(p -> p.getFileName().toString()).sorted().toList();
+        }
+    }
+
+    private long modJars() throws IOException {
+        try (Stream<Path> s = Files.list(mods)) {
+            return s.filter(p -> p.getFileName().toString().endsWith(".jar")).filter(p -> UpdateVerify.versionOf(p) != null).count();
         }
     }
 
     @Test
-    void pendingRoundTripsAndRejectsBadValues() throws IOException {
-        Path dir = dir();
-        UpdateSwap.Pending p = stage(dir, "holo-input-recorder-1.12.0.jar");
-        assertEquals(p, UpdateSwap.readPending(dir));
-        Files.writeString(dir.resolve("pending.json"), "{\"version\":\"1.13.0\",\"file\":\"../x.jar\",\"sha256\":\"" + "a".repeat(64) + "\",\"oldJar\":\"x\"}");
-        assertNull(UpdateSwap.readPending(dir));
-        Files.writeString(dir.resolve("pending.json"), "{\"version\":\"1.13.0\",\"file\":\"x.jar\",\"sha256\":\"zz\",\"oldJar\":\"x\"}");
-        assertNull(UpdateSwap.readPending(dir));
-        Files.writeString(dir.resolve("pending.json"), "garbage");
-        assertNull(UpdateSwap.readPending(dir));
+    void swapWithNothingHoldingTheJarLeavesOneModJarAndAnAsideCopy() throws IOException {
+        Path old = put("holo-input-recorder-1.12.0.jar", jar("1.12.0"));
+        Path staged = put("holo-input-recorder-1.13.0.jar.new", jar("1.13.0"));
+        assertTrue(UpdateSwap.trySwap(old, staged, mods.resolve("holo-input-recorder-1.13.0.jar")));
+        assertEquals(List.of("holo-input-recorder-1.12.0.jar.disabled", "holo-input-recorder-1.13.0.jar"), names());
+        assertEquals(1, modJars());
+        assertEquals("1.13.0", UpdateVerify.versionOf(mods.resolve("holo-input-recorder-1.13.0.jar")));
     }
 
     @Test
-    void immediateSwapLeavesExactlyOneJarAndAnUndoCopy() throws IOException {
-        Path dir = dir();
-        UpdateSwap.Pending p = stage(dir, "holo-input-recorder-1.12.0.jar");
-        assertTrue(UpdateSwap.swapNow(dir, p));
-        assertEquals(List.of("holo-input-recorder-1.13.0.jar"), jars());
-        assertArrayEquals(NEW, Files.readAllBytes(mods.resolve("holo-input-recorder-1.13.0.jar")));
-        assertTrue(Files.isRegularFile(dir.resolve("previous").resolve("holo-input-recorder-1.12.0.jar.bak")));
-        assertFalse(Files.exists(dir.resolve("pending.json")));
-        assertEquals("ok 1.13.0", Files.readString(dir.resolve("last-result.txt")));
+    void swapWhileTheJarIsHeldOpenEndsInEitherCleanState() throws IOException {
+        byte[] oldBytes = jar("1.12.0");
+        Path old = put("holo-input-recorder-1.12.0.jar", oldBytes);
+        Path staged = put("holo-input-recorder-1.13.0.jar.new", jar("1.13.0"));
+        Path target = mods.resolve("holo-input-recorder-1.13.0.jar");
+        boolean swapped;
+        try (ZipFile held = new ZipFile(old.toFile())) {
+            assertNotNull(held.getEntry("fabric.mod.json"));
+            swapped = UpdateSwap.trySwap(old, staged, target);
+        }
+        if (swapped) {
+            assertEquals(1, modJars());
+            assertTrue(Files.exists(target));
+            assertFalse(Files.exists(staged));
+            assertTrue(Files.exists(mods.resolve("holo-input-recorder-1.12.0.jar.disabled")));
+        } else {
+            assertTrue(Files.exists(staged), "the download must stay for the manual step");
+            assertArrayEquals(oldBytes, Files.readAllBytes(old));
+            assertFalse(Files.exists(target));
+            assertFalse(Files.exists(mods.resolve("holo-input-recorder-1.12.0.jar.disabled")));
+            assertEquals(1, modJars());
+        }
     }
 
     @Test
-    void theNextLaunchReportsASuccessfulSwapOnce() throws IOException {
-        Path dir = dir();
-        Files.writeString(dir.resolve("last-result.txt"), "ok 1.13.0");
-        assertEquals("1.13.0", UpdateSwap.resume(dir, "1.13.0"));
-        assertNull(UpdateSwap.resume(dir, "1.13.0"));
+    void aFailedSecondStepPutsTheOldJarBack() throws IOException {
+        byte[] oldBytes = jar("1.12.0");
+        Path old = put("holo-input-recorder-1.12.0.jar", oldBytes);
+        Path staged = put("holo-input-recorder-1.13.0.jar.new", jar("1.13.0"));
+        Path target = put("holo-input-recorder-1.13.0.jar", "in the way".getBytes());
+        assertFalse(UpdateSwap.trySwap(old, staged, target));
+        assertArrayEquals(oldBytes, Files.readAllBytes(old));
+        assertTrue(Files.exists(staged));
+        assertFalse(Files.exists(mods.resolve("holo-input-recorder-1.12.0.jar.disabled")));
     }
 
     @Test
-    void aFailedResultOrAnOtherVersionShowsNothing() throws IOException {
-        Path dir = dir();
-        Files.writeString(dir.resolve("last-result.txt"), "fail locked");
-        assertNull(UpdateSwap.resume(dir, "1.12.0"));
-        Files.writeString(dir.resolve("last-result.txt"), "ok 1.13.0");
-        assertNull(UpdateSwap.resume(dir, "1.12.0"));
+    void aMissingRunningJarIsAFailureNotACrash() throws IOException {
+        Path staged = put("holo-input-recorder-1.13.0.jar.new", jar("1.13.0"));
+        assertFalse(UpdateSwap.trySwap(mods.resolve("gone.jar"), staged, mods.resolve("holo-input-recorder-1.13.0.jar")));
+        assertTrue(Files.exists(staged));
     }
 
     @Test
-    void aPendingJarThatChangedOrIsAlreadyInstalledIsDropped() throws IOException {
-        Path dir = dir();
-        UpdateSwap.Pending p = stage(dir, "holo-input-recorder-1.12.0.jar");
-        Files.write(UpdateSwap.verifiedFile(dir, p), "tampered".getBytes(StandardCharsets.UTF_8));
-        assertNull(UpdateSwap.resume(dir, "1.12.0"));
-        assertFalse(Files.exists(dir.resolve("pending.json")));
-        assertFalse(Files.exists(UpdateSwap.verifiedFile(dir, p)));
-        assertEquals(List.of("holo-input-recorder-1.12.0.jar"), jars());
+    void cleanupRemovesLeftoversAndKeepsOnlyANewerDownload() throws IOException {
+        put("holo-input-recorder-1.11.0.jar.disabled", jar("1.11.0"));
+        put("holo-input-recorder-1.12.0.jar.new", jar("1.12.0"));
+        put("holo-input-recorder-1.9.0.jar.new", jar("1.9.0"));
+        put("holo-input-recorder-1.0.0.jar.new", "not a jar".getBytes());
+        put("holo-input-recorder-1.13.0.jar.new", jar("1.13.0"));
+        put("holo-input-recorder-1.14.0.jar.new", jar("1.14.0"));
+        put("holo-input-recorder-1.12.0.jar", jar("1.12.0"));
+        put("other-mod-1.0.jar.disabled", jar("1.0"));
+        put("something.new", jar("9.9.9"));
+        Files.createDirectories(UpdateSwap.updateDir(mods));
+        Path part = Files.write(UpdateSwap.updateDir(mods).resolve("x.jar.part"), new byte[] {1});
 
-        UpdateSwap.Pending q = stage(dir, "holo-input-recorder-1.12.0.jar");
-        assertNull(UpdateSwap.resume(dir, "1.13.0+mc26.2"));
-        assertFalse(Files.exists(UpdateSwap.verifiedFile(dir, q)));
+        UpdateSwap.Staged staged = UpdateSwap.cleanup(mods, "1.12.0");
+
+        assertEquals(new UpdateSwap.Staged("1.14.0", "holo-input-recorder-1.14.0.jar"), staged);
+        assertEquals(List.of(".holoplayer-update", "holo-input-recorder-1.12.0.jar", "holo-input-recorder-1.14.0.jar.new",
+                "other-mod-1.0.jar.disabled", "something.new"), names());
+        assertFalse(Files.exists(part));
     }
 
     @Test
-    void theHiddenFolderIsNeverScannedAsAMod() {
-        assertTrue(UpdateSwap.DIR.startsWith("."));
+    void cleanupAcceptsTheMc262VersionSuffix() throws IOException {
+        put("holo-input-recorder-1.13.0+mc26.2.jar.new", jar("1.13.0+mc26.2"));
+        assertEquals("1.13.0", UpdateSwap.cleanup(mods, "1.12.0+mc26.2").version());
+        assertNull(UpdateSwap.cleanup(mods, "1.13.0+mc26.2"));
+    }
+
+    @Test
+    void cleanupOnAMissingFolderDoesNotThrow() {
+        assertNull(UpdateSwap.cleanup(mods.resolve("nope"), "1.12.0"));
     }
 }

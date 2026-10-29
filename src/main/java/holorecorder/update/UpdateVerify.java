@@ -32,15 +32,32 @@ final class UpdateVerify {
     static void check(byte[] jar, UpdateManifest.Build build, String manifestVersion) throws IOException {
         if (jar.length != build.size()) throw new IOException("size differs");
         if (!sha256(jar).equals(build.sha256())) throw new IOException("sha256 differs");
-        JsonObject o;
+        JsonObject o = modObject(jar);
+        if (!MOD_ID.equals(str(o, "id"))) throw new IOException("wrong mod id");
+        if (!UpdateVersion.base(str(o, "version")).equals(UpdateVersion.base(manifestVersion))) throw new IOException("wrong mod version");
+    }
+
+    private static String str(JsonObject o, String key) {
+        return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : "";
+    }
+
+    private static JsonObject modObject(byte[] jar) throws IOException {
         try {
-            o = JsonParser.parseString(modJson(jar)).getAsJsonObject();
+            return JsonParser.parseString(modJson(jar)).getAsJsonObject();
         } catch (IllegalStateException | com.google.gson.JsonParseException e) {
             throw new IOException("fabric.mod.json unreadable");
         }
-        if (!o.has("id") || !MOD_ID.equals(o.get("id").getAsString())) throw new IOException("wrong mod id");
-        String version = o.has("version") ? o.get("version").getAsString() : "";
-        if (!UpdateVersion.base(version).equals(UpdateVersion.base(manifestVersion))) throw new IOException("wrong mod version");
+    }
+
+    /** The version a mod jar file declares, or null when it is not a readable jar of this mod. */
+    static String versionOf(java.nio.file.Path file) {
+        try {
+            if (java.nio.file.Files.size(file) > UpdateManifest.MAX_JAR) return null;
+            JsonObject o = modObject(java.nio.file.Files.readAllBytes(file));
+            return MOD_ID.equals(str(o, "id")) ? str(o, "version") : null;
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     private static String modJson(byte[] jar) throws IOException {

@@ -36,12 +36,11 @@ public final class UpdateClient {
             }
         });
         Minecraft mc = Minecraft.getInstance();
-        UpdateService.startup(mc, version -> toast(mc, Tr.t("Holoplayer mod update"), Tr.t("Holoplayer updated to {0}", version)),
-                a -> {
-                    if (UpdateService.phase() != UpdateService.Phase.DONE) {
-                        toast(mc, Tr.t("Holoplayer mod update"), Tr.t("Update available: version {0}", a.latest()));
-                    }
-                });
+        UpdateService.startup(mc, a -> {
+            if (UpdateService.phase() != UpdateService.Phase.DONE) {
+                toast(mc, Tr.t("Holoplayer mod update"), Tr.t("Update available: version {0}", a.latest()));
+            }
+        });
     }
 
     private static void addTitleButton(Minecraft mc, Screen screen) {
@@ -59,6 +58,10 @@ public final class UpdateClient {
     /** The server's hint arrived. Only the official manifest decides; at most one check per connection. */
     public static void prompt(Minecraft mc, UpdatePromptPayload p) {
         if (p.version() != UpdatePromptPayload.VERSION || !UpdateService.enabled() || !PROMPTED.compareAndSet(false, true)) return;
+        if (UpdateService.phase() == UpdateService.Phase.MANUAL && UpdateService.available() != null) {
+            if (mc.gui.screen() == null) mc.gui.setScreen(new UpdateScreen(null, true));
+            return;
+        }
         if (UpdateService.available() == null && !UpdateVersion.isNewer(p.latest(), UpdateService.ownVersion())) return;
         UpdateService.checkAsync(mc, a -> {
             if (UpdateService.phase() == UpdateService.Phase.DONE) return;
