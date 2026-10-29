@@ -15,7 +15,7 @@ import java.util.List;
  */
 public final class ImproveModel {
     public static final int NEUTRAL = 0xFF8A96A3, NO_EDGE = 0;
-    private static final int MAX_TABS = 16, MAX_BLOCKS = 400, MAX_DOTS = 40, MAX_ROWS = 200, MAX_TEXT = 1500;
+    private static final int MAX_TABS = 16, MAX_BLOCKS = 400, MAX_DOTS = 40, MAX_ROWS = 200, MAX_TEXT = 1500, MAX_RANGES = 4, MAX_ACTION = 64;
 
     private ImproveModel() {
     }
@@ -51,8 +51,20 @@ public final class ImproveModel {
     public record Tab(String label, String footer, List<Block> blocks) {
     }
 
-    /** {@code footer} may be "" ; a tab's own footer replaces it. */
-    public record Screen(String title, String subtitle, String footer, String back, String close, int tab, List<Tab> tabs) {
+    /**
+     * A time-range toggle button (protocol: "ranges"). {@code action} is what is sent back when it is clicked, at most 64
+     * characters; {@code on} marks the range that is shown.
+     */
+    public record Range(String label, String action, boolean on) {
+    }
+
+    /** {@code footer} may be "" ; a tab's own footer replaces it. {@code ranges} is empty when the server sends none. */
+    public record Screen(String title, String subtitle, String footer, String back, String close, int tab, List<Tab> tabs,
+                         List<Range> ranges) {
+        public Screen(String title, String subtitle, String footer, String back, String close, int tab, List<Tab> tabs) {
+            this(title, subtitle, footer, back, close, tab, tabs, List.of());
+        }
+
         public String footerOf(int tabIndex) {
             String own = tabs.get(tabIndex).footer();
             return own.isBlank() ? footer : own;
@@ -74,10 +86,25 @@ public final class ImproveModel {
             if (tabs.isEmpty()) return null;
             int tab = Math.max(0, Math.min(tabs.size() - 1, (int) number(o, "tab", 0)));
             return new Screen(str(o, "title"), str(o, "subtitle"), str(o, "footer"), strOr(o, "back", "Back"),
-                    strOr(o, "close", "Close"), tab, List.copyOf(tabs));
+                    strOr(o, "close", "Close"), tab, List.copyOf(tabs), ranges(o));
         } catch (RuntimeException | StackOverflowError e) {
             return null;
         }
+    }
+
+    /** The range buttons: an entry needs a label and an action of at most 64 characters, else it is skipped. */
+    private static List<Range> ranges(JsonObject o) {
+        List<Range> out = new ArrayList<>();
+        for (JsonElement e : array(o, "ranges")) {
+            if (out.size() >= MAX_RANGES) break;
+            if (!e.isJsonObject()) continue;
+            JsonObject r = e.getAsJsonObject();
+            String label = str(r, "label").strip(), action = str(r, "action");
+            JsonElement on = r.get("on");
+            if (label.isEmpty() || action.isBlank() || action.length() > MAX_ACTION) continue;
+            out.add(new Range(label, action, on != null && on.isJsonPrimitive() && on.getAsJsonPrimitive().isBoolean() && on.getAsBoolean()));
+        }
+        return List.copyOf(out);
     }
 
     private static Tab tab(JsonObject o) {

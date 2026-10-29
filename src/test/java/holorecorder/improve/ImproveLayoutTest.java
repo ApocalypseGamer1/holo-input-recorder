@@ -192,6 +192,19 @@ class ImproveLayoutTest {
             for (int j = i + 1; j < r.tabs().size(); j++) assertFalse(overlap(a, r.tabs().get(j).box()), at + " tabs " + i + "," + j + " overlap");
             assertTrue(a.y() + a.h() <= r.viewport().y(), at + " tab above the content");
         }
+        assertEquals(s.ranges().size(), r.ranges().size(), at + " every range is placed");
+        for (int i = 0; i < r.ranges().size(); i++) {
+            ImproveLayout.RangeBox a = r.ranges().get(i);
+            assertEquals(s.ranges().get(i).action(), a.action(), at + " range " + i + " action");
+            assertEquals(s.ranges().get(i).on(), a.on(), at + " range " + i + " on");
+            assertTrue(inside(a.box(), r.panel()), at + " range " + i + " in panel");
+            assertTrue(a.box().x() >= r.viewport().x() && a.box().x() + a.box().w() <= r.viewport().x() + r.viewport().w(), at + " range " + i + " in the viewport width");
+            assertTrue(width(a.label()) + 14 <= a.box().w(), at + " range label fits");
+            assertTrue(a.box().y() + a.box().h() <= r.viewport().y(), at + " range above the content");
+            assertTrue(a.box().y() >= r.titleBar().y() + r.titleBar().h(), at + " range under the header");
+            for (int j = i + 1; j < r.ranges().size(); j++) assertFalse(overlap(a.box(), r.ranges().get(j).box()), at + " ranges " + i + "," + j + " overlap");
+            for (ImproveLayout.TabBox t : r.tabs()) assertFalse(overlap(a.box(), t.box()), at + " range " + i + " over a tab");
+        }
         for (Text t : r.header()) {
             assertTrue(t.x() >= r.panel().x() && t.x() + width(t.text()) <= r.panel().x() + r.panel().w(), at + " header text '" + t.text() + "'");
         }
@@ -300,6 +313,138 @@ class ImproveLayoutTest {
         assertNotNull(s);
         for (int[] sc : REAL) check("long", sc[0], sc[1], ImproveLayout.compute(sc[0], sc[1], METER, s), s);
         for (int[] sc : TINY) check("long", sc[0], sc[1], ImproveLayout.compute(sc[0], sc[1], METER, s), s);
+    }
+
+    // ---- time ranges ------------------------------------------------------------------------------------------------
+
+    private static String tabsJson(String... labels) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < labels.length; i++) {
+            if (i > 0) sb.append(',');
+            sb.append("{\"label\":\"").append(labels[i]).append("\",\"blocks\":[{\"t\":\"card\",\"color\":\"bad\",\"title\":\"Card\",\"sub\":\"Text\","
+                    + "\"count\":\"9 of 41 rounds\",\"dots\":[true,true,true,true,true,true,true,true,true,true,true,true,false,false,false,false,false,false,false,false]}]}");
+        }
+        return sb.toString();
+    }
+
+    private static String rangesJson(String a, String b) {
+        return "[{\"label\":\"" + a + "\",\"action\":\"days:7\",\"on\":true},{\"label\":\"" + b + "\",\"action\":\"days:30\",\"on\":false}]";
+    }
+
+    private static ImproveModel.Screen withRanges(String ranges, String... tabs) {
+        ImproveModel.Screen s = ImproveModel.parse("{\"title\":\"Improve: sword\",\"subtitle\":\"Your last 7 days (60 rounds) vs the top players\","
+                + "\"footer\":\"White line = top players.\",\"ranges\":" + ranges + ",\"tabs\":[" + tabsJson(tabs) + "]}");
+        assertNotNull(s);
+        return s;
+    }
+
+    private static final String[] TABS_EN = {"All", "Movement", "Aim", "Hits", "Jumps", "Game phase"};
+    private static final String[] TABS_ES = {"Todo", "Movimiento", "Puntería", "Golpes", "Saltos", "Fase de juego"};
+    private static final String[] TABS_RU = {"Все", "Движение", "Прицел", "Удары", "Прыжки", "Фаза игры"};
+
+    @Test
+    void screenWithoutRangesHasNoRangeButtons() {
+        ImproveModel.Screen s = ImproveModel.parse(SAMPLE);
+        assertTrue(s.ranges().isEmpty());
+        for (int[] sc : REAL) assertTrue(ImproveLayout.compute(sc[0], sc[1], METER, s).ranges().isEmpty());
+        ImproveModel.Screen sixArgs = new ImproveModel.Screen("t", "", "", "Back", "Close", 0, s.tabs());
+        assertTrue(sixArgs.ranges().isEmpty());
+    }
+
+    @Test
+    void rangesAreParsedForgivingly() {
+        ImproveModel.Screen s = withRanges(rangesJson("Last 7 days", "Last 30 days"), "All");
+        assertEquals(List.of(new ImproveModel.Range("Last 7 days", "days:7", true), new ImproveModel.Range("Last 30 days", "days:30", false)), s.ranges());
+
+        String odd = "[1, null, \"x\", {\"label\":\"\",\"action\":\"days:1\"}, {\"label\":\"No action\"}, {\"label\":\"Long action\",\"action\":\"" + "a".repeat(65) + "\"},"
+                + "{\"label\":\" Ok \",\"action\":\"days:7\",\"on\":\"yes\"}, {\"label\":\"Num\",\"action\":\"days:30\",\"on\":1},"
+                + "{\"label\":\"A\",\"action\":\"a1\",\"on\":true}, {\"label\":\"B\",\"action\":\"a2\"}, {\"label\":\"C\",\"action\":\"a3\"}]";
+        ImproveModel.Screen o = withRanges(odd, "All");
+        assertEquals(4, o.ranges().size(), "capped at 4, bad entries skipped");
+        assertEquals(new ImproveModel.Range("Ok", "days:7", false), o.ranges().get(0), "on must be a real boolean");
+        assertEquals(new ImproveModel.Range("Num", "days:30", false), o.ranges().get(1));
+        assertEquals(new ImproveModel.Range("A", "a1", true), o.ranges().get(2));
+        assertEquals(64, ImproveModel.parse("{\"ranges\":[{\"label\":\"x\",\"action\":\"" + "b".repeat(64) + "\"}],\"tabs\":[{\"label\":\"a\"}]}").ranges().get(0).action().length());
+
+        // not a list / wrong types: no ranges, the screen still opens
+        for (String bad : new String[]{"5", "\"x\"", "{\"a\":1}", "null"}) {
+            ImproveModel.Screen b = ImproveModel.parse("{\"ranges\":" + bad + ",\"tabs\":[{\"label\":\"a\"}]}");
+            assertNotNull(b, bad);
+            assertTrue(b.ranges().isEmpty(), bad);
+        }
+    }
+
+    @Test
+    void rangesShareTheLastTabLineWhenTheyFitAndSitRightAligned() {
+        ImproveModel.Screen s = withRanges(rangesJson("Last 7 days", "Last 30 days"), TABS_EN);
+        Result r = ImproveLayout.compute(1920, 1080, METER, s);
+        check("ranges-en", 1920, 1080, r, s);
+        int lastTabY = r.tabs().get(r.tabs().size() - 1).box().y();
+        for (ImproveLayout.RangeBox b : r.ranges()) assertEquals(lastTabY, b.box().y(), "same line as the tabs");
+        ImproveLayout.RangeBox last = r.ranges().get(1);
+        assertEquals(r.viewport().x() + r.viewport().w(), last.box().x() + last.box().w(), "right-aligned");
+        assertTrue(r.ranges().get(0).box().x() < last.box().x());
+        assertTrue(r.ranges().get(0).on() && !last.on());
+        // the line is shared: no extra row compared with the same screen without ranges
+        Result without = ImproveLayout.compute(1920, 1080, METER, withRanges("[]", TABS_EN));
+        assertEquals(without.viewport().y(), r.viewport().y());
+    }
+
+    @Test
+    void rangesGetTheirOwnLineWhenTheTabsLeaveNoRoom() {
+        ImproveModel.Screen s = withRanges(rangesJson("Últimos 7 días", "Últimos 30 días"), TABS_ES);
+        Result r = ImproveLayout.compute(640, 360, METER, s);   // 544 px of room: the six Spanish tabs take most of it
+        check("ranges-es", 640, 360, r, s);
+        int lastTabBottom = r.tabs().stream().mapToInt(t -> t.box().y() + t.box().h()).max().orElse(0);
+        boolean own = r.ranges().stream().allMatch(b -> b.box().y() >= lastTabBottom);
+        boolean shared = r.ranges().stream().allMatch(b -> b.box().y() < lastTabBottom);
+        assertTrue(own || shared, "the two buttons are on one line");
+        assertEquals(r.viewport().x() + r.viewport().w(), r.ranges().get(1).box().x() + r.ranges().get(1).box().w(), "right-aligned");
+    }
+
+    @Test
+    void rangesWrapOnNarrowScreensAndNeverOverlapTabs() {
+        String[][] sets = {TABS_EN, TABS_ES, TABS_RU};
+        String[][] labels = {{"Last 7 days", "Last 30 days"}, {"Últimos 7 días", "Últimos 30 días"}, {"Последние 7 дней", "Последние 30 дней"},
+                {"最近 7 天", "最近 30 天"}, {"Ultimi 7 giorni", "Ultimi 30 giorni"}};
+        for (int k = 0; k < sets.length; k++) {
+            ImproveModel.Screen s = withRanges(rangesJson(labels[k][0], labels[k][1]), sets[k]);
+            for (int[] sc : REAL) check("narrow-" + k, sc[0], sc[1], ImproveLayout.compute(sc[0], sc[1], METER, s), s);
+            for (int[] sc : TINY) check("narrow-" + k, sc[0], sc[1], ImproveLayout.compute(sc[0], sc[1], METER, s), s);
+            for (int width = 100; width <= 700; width += 7) check("w" + width + "-" + k, width, 400, ImproveLayout.compute(width, 400, METER, s), s);
+        }
+        // Russian at 240 px: the two buttons cannot share a line, so they stack
+        ImproveModel.Screen ru = withRanges(rangesJson(labels[2][0], labels[2][1]), TABS_RU);
+        Result r = ImproveLayout.compute(240, 240, METER, ru);
+        check("stack", 240, 240, r, ru);
+        assertNotEquals(r.ranges().get(0).box().y(), r.ranges().get(1).box().y(), "stacked on a narrow screen");
+    }
+
+    @Test
+    void veryLongRangeLabelsAreCutToTheLine() {
+        ImproveModel.Screen s = withRanges(rangesJson("Letzte sieben Tage in diesem Modus".repeat(4), "最近三十天".repeat(20)), TABS_EN);
+        for (int[] sc : REAL) check("long-range", sc[0], sc[1], ImproveLayout.compute(sc[0], sc[1], METER, s), s);
+        for (int[] sc : TINY) check("long-range", sc[0], sc[1], ImproveLayout.compute(sc[0], sc[1], METER, s), s);
+    }
+
+    @Test
+    void rangesWorkWithOneTabOrNone() {
+        ImproveModel.Screen one = withRanges(rangesJson("Last 7 days", "Last 30 days"), "Only");
+        Result r = ImproveLayout.compute(640, 360, METER, one);
+        check("one-tab", 640, 360, r, one);
+        assertTrue(r.tabs().isEmpty());
+        assertEquals(2, r.ranges().size());
+        assertEquals(r.ranges().get(0).box().y(), r.ranges().get(1).box().y());
+        for (int[] sc : TINY) check("one-tab", sc[0], sc[1], ImproveLayout.compute(sc[0], sc[1], METER, one), one);
+    }
+
+    @Test
+    void panelIsOneTabLineTallerOnlyWhenTheRangesNeedTheirOwnLine() {
+        ImproveModel.Screen s = withRanges(rangesJson("Последние 7 дней", "Последние 30 дней"), TABS_RU);
+        Result with = ImproveLayout.compute(320, 240, METER, s);
+        Result without = ImproveLayout.compute(320, 240, METER, withRanges("[]", TABS_RU));
+        assertTrue(with.viewport().y() > without.viewport().y(), "the extra line pushes the content down");
+        assertTrue(with.viewport().h() >= 20, "and the content still has room");
     }
 
     @Test
