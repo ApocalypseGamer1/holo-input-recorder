@@ -7,12 +7,18 @@ import holorecorder.protocol.ClientModsPayload;
 import holorecorder.protocol.ClientModsV2Payload;
 import holorecorder.protocol.IntegrityChallengePayload;
 import holorecorder.protocol.IntegrityResponsePayload;
+import holorecorder.protocol.MenuClickPayload;
+import holorecorder.protocol.MenuClosePayload;
+import holorecorder.protocol.MenuClosedPayload;
+import holorecorder.protocol.MenuOpenPayload;
+import holorecorder.protocol.MenuUpdatePayload;
 import holorecorder.protocol.RoundStatePayload;
 import holorecorder.protocol.ReviewClipPayload;
 import holorecorder.protocol.ReviewClipRequestPayload;
 import holorecorder.protocol.ReviewDataPayload;
 import holorecorder.protocol.ReviewEndPayload;
 import holorecorder.protocol.WinBarPayload;
+import holorecorder.menu.MenuClient;
 import holorecorder.review.ReviewClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -67,6 +73,18 @@ public final class HoloInputRecorder implements ClientModInitializer {
         PayloadTypeRegistry.clientboundPlay().register(ReviewClipPayload.TYPE, ReviewClipPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(ReviewClipRequestPayload.TYPE, ReviewClipRequestPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(holorecorder.protocol.LangPayload.TYPE, holorecorder.protocol.LangPayload.CODEC);
+        // Custom menus (1.10.0): the server draws no chest for a client that takes these channels.
+        PayloadTypeRegistry.clientboundPlay().register(MenuOpenPayload.TYPE, MenuOpenPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(MenuUpdatePayload.TYPE, MenuUpdatePayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(MenuClosePayload.TYPE, MenuClosePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(MenuClickPayload.TYPE, MenuClickPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(MenuClosedPayload.TYPE, MenuClosedPayload.CODEC);
+        ClientPlayNetworking.registerGlobalReceiver(MenuOpenPayload.TYPE, (payload, context) ->
+                context.client().execute(() -> MenuClient.open(context.client(), payload)));
+        ClientPlayNetworking.registerGlobalReceiver(MenuUpdatePayload.TYPE, (payload, context) ->
+                context.client().execute(() -> MenuClient.update(context.client(), payload)));
+        ClientPlayNetworking.registerGlobalReceiver(MenuClosePayload.TYPE, (payload, context) ->
+                context.client().execute(() -> MenuClient.close(context.client(), payload)));
         ClientPlayNetworking.registerGlobalReceiver(holorecorder.protocol.LangPayload.TYPE, (payload, context) ->
                 context.client().execute(() -> Tr.server(payload.code())));
         ClientPlayNetworking.registerGlobalReceiver(ReviewDataPayload.TYPE, (payload, context) ->
