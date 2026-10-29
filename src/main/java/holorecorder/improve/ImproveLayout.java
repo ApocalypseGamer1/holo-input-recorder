@@ -51,8 +51,13 @@ public final class ImproveLayout {
     public record TabBox(Rect box, String label, int index) {
     }
 
-    public record Result(Rect panel, Rect titleBar, List<Text> header, List<TabBox> tabs, Rect viewport, int contentWidth,
-                         Rect footer, Rect back, Rect close, String backLabel, String closeLabel, List<Content> contents) {
+    /** A time-range toggle button, placed. {@code on}: the range that is shown. */
+    public record RangeBox(Rect box, String label, String action, boolean on) {
+    }
+
+    public record Result(Rect panel, Rect titleBar, List<Text> header, List<TabBox> tabs, List<RangeBox> ranges, Rect viewport,
+                         int contentWidth, Rect footer, Rect back, Rect close, String backLabel, String closeLabel,
+                         List<Content> contents) {
         public int maxScroll(int tab) {
             return Math.max(0, contents.get(tab).height() - viewport.h());
         }
@@ -89,9 +94,10 @@ public final class ImproveLayout {
         int titleRows = Math.max(1, titleLines.size());
         int headerH = 2 * vpad + titleRows * lh + (subLines.isEmpty() ? 0 : 2 + subLines.size() * lh);
 
-        // tabs
+        // tabs, then the time-range buttons: right-aligned on the last tab line when they fit there, else on a line of their own
         List<TabBox> tabs = new ArrayList<>();
-        int tabH = lh + (compact ? 4 : 8), tabsH = 0;
+        List<RangeBox> ranges = new ArrayList<>();
+        int tabH = lh + (compact ? 4 : 8), tabsH = 0, tabRows = 0, tabsEnd = 0;
         if (s.tabs().size() > 1) {
             int x = 0, row = 0;
             for (int i = 0; i < s.tabs().size(); i++) {
@@ -104,8 +110,34 @@ public final class ImproveLayout {
                 tabs.add(new TabBox(new Rect(x, row * (tabH + GAP), w, tabH), label, i));
                 x += w + GAP;
             }
-            tabsH = (row + 1) * tabH + row * GAP;
+            tabRows = row + 1;
+            tabsEnd = x - GAP;
         }
+        if (!s.ranges().isEmpty()) {
+            List<String> rangeLabels = new ArrayList<>();
+            int total = 0;
+            for (ImproveModel.Range r : s.ranges()) {
+                String label = TextFit.ellipsize(r.label(), viewW - 14, m::width);
+                rangeLabels.add(label);
+                total += m.width(label) + 14 + (total > 0 ? GAP : 0);
+            }
+            int row = tabRows;
+            int x = viewW - total;
+            if (tabRows > 0 && tabsEnd + 2 * GAP <= x) row = tabRows - 1;   // room on the last tab line
+            else if (total > viewW) x = 0;                                   // not even alone: wrap like tabs
+            for (int i = 0; i < s.ranges().size(); i++) {
+                int w = m.width(rangeLabels.get(i)) + 14;
+                if (total > viewW && x > 0 && x + w > viewW) {
+                    x = 0;
+                    row++;
+                }
+                ImproveModel.Range r = s.ranges().get(i);
+                ranges.add(new RangeBox(new Rect(x, row * (tabH + GAP), w, tabH), rangeLabels.get(i), r.action(), r.on()));
+                x += w + GAP;
+            }
+            tabRows = Math.max(tabRows, row + 1);
+        }
+        if (tabRows > 0) tabsH = tabRows * tabH + (tabRows - 1) * GAP;
 
         // footer: text left and buttons right when the text gets enough room, else the text above the buttons
         String backLabel = TextFit.ellipsize(s.back(), viewW / 2 - 16, m::width);
@@ -180,6 +212,12 @@ public final class ImproveLayout {
             placedTabs.add(new TabBox(new Rect(viewport.x() + b.x(), panelY + headerH + gap + b.y(), b.w(), b.h()), t.label(), t.index()));
         }
 
+        List<RangeBox> placedRanges = new ArrayList<>();
+        for (RangeBox r : ranges) {
+            Rect b = r.box();
+            placedRanges.add(new RangeBox(new Rect(viewport.x() + b.x(), panelY + headerH + gap + b.y(), b.w(), b.h()), r.label(), r.action(), r.on()));
+        }
+
         int btnY, textY0;
         int rowTop = footer.y() + fpad;
         if (side) {
@@ -204,8 +242,8 @@ public final class ImproveLayout {
             Content c = contents.get(i);
             withFooter.add(new Content(c.prims(), c.spans(), c.height(), List.copyOf(ft)));
         }
-        return new Result(panel, titleBar, List.copyOf(header), List.copyOf(placedTabs), viewport, innerW, footer, back, close,
-                backLabel, closeLabel, List.copyOf(withFooter));
+        return new Result(panel, titleBar, List.copyOf(header), List.copyOf(placedTabs), List.copyOf(placedRanges), viewport, innerW,
+                footer, back, close, backLabel, closeLabel, List.copyOf(withFooter));
     }
 
     // ---- blocks -----------------------------------------------------------------------------------------------------

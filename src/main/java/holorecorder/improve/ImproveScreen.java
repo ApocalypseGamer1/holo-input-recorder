@@ -35,6 +35,9 @@ public final class ImproveScreen extends Screen {
     private ImproveLayout.Result layout;
     private double scroll;
     private boolean draggingBar, actionSent;
+    /** A range button was clicked and the server has not answered yet: that button looks selected, for a few seconds at most. */
+    private String pendingRange;
+    private long pendingUntil;
     private final Map<String, ItemStack> stacks = new HashMap<>();
 
     public ImproveScreen(ImproveModel.Screen data) {
@@ -48,6 +51,7 @@ public final class ImproveScreen extends Screen {
         boolean same = next.tabs().size() == data.tabs().size();
         for (int i = 0; same && i < next.tabs().size(); i++) same = next.tabs().get(i).label().equals(data.tabs().get(i).label());
         data = next;
+        pendingRange = null;
         if (!same) {
             tab = next.tab();
             scroll = 0;
@@ -116,6 +120,12 @@ public final class ImproveScreen extends Screen {
             centred(g, t.box(), t.label(), on || hover ? 0xFFFFFFFF : ImproveLayout.GREY);
         }
 
+        for (ImproveLayout.RangeBox r : layout.ranges()) {
+            boolean on = rangeOn(r), hover = !on && r.box().contains(mouseX, mouseY);
+            box(g, r.box(), on ? 0xFF222833 : hover ? HOVER : ImproveLayout.BG, on ? ImproveLayout.ACCENT : ImproveLayout.BORDER);
+            centred(g, r.box(), r.label(), on || hover ? 0xFFFFFFFF : ImproveLayout.GREY);
+        }
+
         ImproveLayout.Content content = layout.contents().get(tab);
         g.enableScissor(vp.x(), vp.y(), vp.x() + vp.w(), vp.y() + vp.h());
         int ox = vp.x(), oy = vp.y() - (int) Math.round(scroll);
@@ -139,6 +149,14 @@ public final class ImproveScreen extends Screen {
         for (Text t : content.footer()) g.text(f, t.text(), t.x(), t.y(), t.argb(), t.shadow());
         button(g, layout.back(), layout.backLabel(), mouseX, mouseY);
         button(g, layout.close(), layout.closeLabel(), mouseX, mouseY);
+    }
+
+    private boolean waitingForRange() {
+        return pendingRange != null && System.currentTimeMillis() < pendingUntil;
+    }
+
+    private boolean rangeOn(ImproveLayout.RangeBox r) {
+        return waitingForRange() ? r.action().equals(pendingRange) : r.on();
     }
 
     private void button(GuiGraphicsExtractor g, Rect r, String label, int mouseX, int mouseY) {
@@ -216,6 +234,16 @@ public final class ImproveScreen extends Screen {
                     setTab(t.index());
                     return true;
                 }
+            }
+            for (ImproveLayout.RangeBox r : layout.ranges()) {
+                if (!r.box().contains(e.x(), e.y())) continue;
+                if (!rangeOn(r) && !waitingForRange()) {
+                    click();
+                    pendingRange = r.action();
+                    pendingUntil = System.currentTimeMillis() + 4000;
+                    ImproveClient.send(r.action());
+                }
+                return true;
             }
             Rect vp = layout.viewport();
             if (layout.maxScroll(tab) > 0) {
