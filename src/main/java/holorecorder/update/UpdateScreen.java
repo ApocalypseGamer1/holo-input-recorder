@@ -7,6 +7,8 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import java.net.URI;
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -20,7 +22,7 @@ public final class UpdateScreen extends Screen {
 
     private final Screen parent;
     private final boolean fromServer;
-    private Button update, later;
+    private Button update, later, folder, page;
 
     public UpdateScreen(Screen parent, boolean fromServer) {
         super(Component.literal(Tr.t("Holoplayer mod update")));
@@ -34,6 +36,12 @@ public final class UpdateScreen extends Screen {
             // a second click while it runs is ignored in startDownload
             UpdateService.startDownload(minecraft, UpdateClient::downloaded);
         }).bounds(0, 0, 100, 20).build());
+        folder = addRenderableWidget(Button.builder(Component.literal(Tr.t("Open mods folder")), b -> {
+            Path mods = UpdateService.modsDir();
+            if (mods != null) PlatformOpen.path(mods);
+        }).bounds(0, 0, 100, 20).build());
+        page = addRenderableWidget(Button.builder(Component.literal(Tr.t("Open download page")),
+                b -> PlatformOpen.uri(URI.create(UpdateService.DOWNLOAD_PAGE))).bounds(0, 0, 100, 20).build());
         later = addRenderableWidget(Button.builder(Component.literal(Tr.t("Later")), b -> onClose()).bounds(0, 0, 100, 20).build());
     }
 
@@ -52,6 +60,10 @@ public final class UpdateScreen extends Screen {
 
     private Status status(UpdateService.Available a) {
         if (a.pack() != PackInstance.NONE) return new Status(UpdateService.packMessage(a.pack()), TEXT);
+        if (UpdateService.phase() == UpdateService.Phase.MANUAL && a.file() != null) {
+            return new Status(Tr.t("Close Minecraft, delete the old holo-input-recorder jar in your mods folder, then rename {0} to {1}.",
+                    a.file() + ".new", a.file()), TEXT);
+        }
         if (a.build() == null) return new Status(Tr.t("This Minecraft version has no automatic update. Get the new mod from the Holoplayer website."), TEXT);
         return switch (UpdateService.phase()) {
             case DOWNLOADING -> new Status(Tr.t("Downloading... {0}%", UpdateService.percent()), GREY);
@@ -70,10 +82,11 @@ public final class UpdateScreen extends Screen {
                 : Tr.t("A new version of the Holoplayer mod is available."), textW, 2, font::width);
         Status st = status(a);
         List<String> status = TextFit.wrap(st.text(), textW, 7, font::width);
-        boolean canUpdate = a.pack() == PackInstance.NONE && a.build() != null;
+        boolean manual = a.pack() == PackInstance.NONE && UpdateService.phase() == UpdateService.Phase.MANUAL && a.file() != null;
+        boolean canUpdate = a.pack() == PackInstance.NONE && a.build() != null && !manual;
         boolean done = UpdateService.phase() == UpdateService.Phase.DONE;
         int bodyLines = 2 + reason.size() + status.size();
-        int panelH = PAD + bodyLines * lh + 2 * GAP + 20 + PAD;
+        int panelH = PAD + bodyLines * lh + 2 * GAP + (manual ? 2 * 20 + GAP : 20) + PAD;
         int px = (width - panelW) / 2, py = Math.max(2, (height - panelH) / 2);
         g.fill(px, py, px + panelW, py + panelH, BORDER);
         g.fill(px + 1, py + 1, px + panelW - 1, py + panelH - 1, BG);
@@ -94,6 +107,15 @@ public final class UpdateScreen extends Screen {
         }
         y += GAP;
 
+        folder.visible = page.visible = manual;
+        if (manual) {
+            int half = (textW - GAP) / 2;
+            folder.setWidth(half);
+            folder.setPosition(px + PAD, y);
+            page.setWidth(half);
+            page.setPosition(px + PAD + half + GAP, y);
+            y += 20 + GAP;
+        }
         int bw = canUpdate ? (textW - GAP) / 2 : Math.min(textW, 120);
         update.visible = canUpdate && !done;
         update.active = UpdateService.phase() != UpdateService.Phase.DOWNLOADING;

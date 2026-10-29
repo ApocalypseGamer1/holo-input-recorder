@@ -122,8 +122,10 @@
   "This instance is managed by a modpack. Update the Holoplayer pack in Prism Launcher: open your Holoplayer instance, update the pack, then start the game again.": "Esta instancia la gestiona un modpack. Actualiza el pack de Holoplayer en Prism Launcher: abre tu instancia de Holoplayer, actualiza el pack y vuelve a iniciar el juego.",
   "This instance is managed by a modpack. Update the Holoplayer pack in the CurseForge app: open your Holoplayer profile, click Update, then start the game again.": "Esta instancia la gestiona un modpack. Actualiza el pack de Holoplayer en la app de CurseForge: abre tu perfil de Holoplayer, pulsa Actualizar y vuelve a iniciar el juego.",
   "This instance is managed by a modpack. Update the Holoplayer pack in the launcher you installed it with, then start the game again.": "Esta instancia la gestiona un modpack. Actualiza el pack de Holoplayer en el launcher con el que lo instalaste y vuelve a iniciar el juego.",
-  "Holoplayer updated to {0}": "Holoplayer se actualizó a {0}",
   "Update available: version {0}": "Actualización disponible: versión {0}",
   "Update Holoplayer mod": "Actualizar mod Holoplayer",
-  "Update downloaded. Close Minecraft and start it again to use version {0}.": "Actualización descargada. Cierra Minecraft y ábrelo otra vez para usar la versión {0}."
+  "Update downloaded. Close Minecraft and start it again to use version {0}.": "Actualización descargada. Cierra Minecraft y ábrelo otra vez para usar la versión {0}.",
+  "Close Minecraft, delete the old holo-input-recorder jar in your mods folder, then rename {0} to {1}.": "Cierra Minecraft, borra el jar viejo de holo-input-recorder en tu carpeta de mods y renombra {0} a {1}.",
+  "Open mods folder": "Abrir carpeta de mods",
+  "Open download page": "Abrir página de descarga"
 }
