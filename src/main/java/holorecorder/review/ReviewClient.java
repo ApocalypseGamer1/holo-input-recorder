@@ -498,6 +498,14 @@ public final class ReviewClient {
     /** Bot copy motion worked out once from the recording, so any frame (scrub, slow motion) poses it the same way. */
     private static float[] walkPos, walkSpeed, body;
     private static int[] selfSwing, oppSwing, selfHurt, oppHurt;
+    /**
+     * The player saw the bot this many ticks late (ping + vanilla's smoothing of other players) and clicked from their
+     * position one tick before the server's: the bot copy and the camera are drawn that way, so a hit lands where the
+     * crosshair was. Fitted per round from the hits; 0 for Swordbot's clip (server bots see the truth).
+     */
+    static int viewLag, posLag;
+    static final int DEFAULT_LAG = 4, MAX_LAG = 8;
+    private static int roundLag = DEFAULT_LAG;
     static boolean stopAtMarks = true;
 
     public static int ticks() {
@@ -506,6 +514,10 @@ public final class ReviewClient {
 
     private static void prepare() {
         int n = ticks();
+        if (!inClip()) roundLag = viewLag(record);
+        boolean bots = inClip() && record == swordbot;
+        viewLag = bots ? 0 : roundLag;
+        posLag = bots ? 0 : 1;
         moves = chips(record);
         walkPos = new float[n];
         walkSpeed = new float[n];
@@ -594,13 +606,13 @@ public final class ReviewClient {
             for (int i = lastWhole + 1; i <= whole; i++) {
                 ReviewRecord.Tick t = record.ticks.get(i);
                 if (record.swingStart(i, true) && mc.player != null) swing(mc.player);
-                if (record.swingStart(i, false) && ghost != null) swing(ghost);
+                if (i - viewLag >= 0 && record.swingStart(i - viewLag, false) && ghost != null) swing(ghost);
             }
         }
         lastWhole = whole;
         if (ghost != null) {
-            poseGhost(cursor, partial);
-            ghost.hurtTime = hurtLeft(oppHurt);
+            poseGhost(cursor - viewLag, partial);
+            ghost.hurtTime = hurtLeft(oppHurt, cursor - viewLag);
             ghost.hurtDuration = HURT_TICKS;
         }
         if (mc.player != null) mc.player.hurtTime = 0;
@@ -616,16 +628,20 @@ public final class ReviewClient {
         return false;
     }
 
-    private static int hurtLeft(int[] last) {
-        double since = since(last);
+    private static int hurtLeft(int[] last, double at) {
+        double since = since(last, at);
         return since < HURT_TICKS ? (int) Math.ceil(HURT_TICKS - since) : 0;
     }
 
     /** Ticks since the last event in {@code last} at the cursor (large when none). */
     private static double since(int[] last) {
-        if (last == null) return 1e9;
-        int i = Math.max(0, Math.min(last.length - 1, (int) Math.floor(cursor)));
-        return last[i] < 0 ? 1e9 : cursor - last[i];
+        return since(last, cursor);
+    }
+
+    private static double since(int[] last, double at) {
+        if (last == null || at < 0) return 1e9;
+        int i = Math.max(0, Math.min(last.length - 1, (int) Math.floor(at)));
+        return last[i] < 0 ? 1e9 : at - last[i];
     }
 
     static double sinceYouHit() {
@@ -649,7 +665,7 @@ public final class ReviewClient {
         if (!active || selfSwing == null) return Float.NaN;
         int[] last = entity == ghost ? oppSwing : entity == Minecraft.getInstance().player ? selfSwing : null;
         if (last == null) return Float.NaN;
-        double since = since(last);
+        double since = since(last, entity == ghost ? cursor - viewLag : cursor);
         return since < SWING_TICKS ? (float) (since / SWING_TICKS) : 0f;
     }
 
@@ -738,13 +754,61 @@ public final class ReviewClient {
         if (!active || record == null) return null;
         ReviewRecord.Fighter a = fighter(cursor, true), b = fighter(cursor + 1, true);
         double f = cursor - Math.floor(cursor);
-        double eye = lerp(f, a.sneaking ? EYE_SNEAK : EYE, b.sneaking ? EYE_SNEAK : EYE);
         double yaw = a.yaw + ReviewAnalysis.wrap(b.yaw - a.yaw) * f, pitch = lerp(f, a.pitch, b.pitch);
         if (coachView) {
             yaw += coachYawOff;
             pitch = Math.max(-90, Math.min(90, pitch + coachPitchOff));
         }
-        return new double[] {lerp(f, a.x, b.x), lerp(f, a.y, b.y) + eye, lerp(f, a.z, b.z), yaw, pitch};
+        double at = Math.max(0, cursor - posLag);
+        ReviewRecord.Fighter pa = fighter(at, true), pb = fighter(at + 1, true);
+        double g = at - Math.floor(at);
+        double eye = lerp(g, pa.sneaking ? EYE_SNEAK : EYE, pb.sneaking ? EYE_SNEAK : EYE);
+        return new double[] {lerp(g, pa.x, pb.x), lerp(g, pa.y, pb.y) + eye, lerp(g, pa.z, pb.z), yaw, pitch};
+    }
+
+    /**
+     * The view lag that puts the most of the player's hits on the bot's box: the look ray of the hit tick from the eyes of
+     * the tick before, against the bot {@code d} ticks earlier still. {@link #DEFAULT_LAG} with fewer than 3 hits; ties go
+     * to the value nearest the default.
+     */
+    static int viewLag(ReviewRecord r) {
+        int[] on = new int[MAX_LAG + 1];
+        int hits = 0;
+        for (int i = MAX_LAG + 2; i < r.ticks.size(); i++) {
+            ReviewRecord.Tick t = r.ticks.get(i);
+            if (!t.opp.hurt || r.ticks.get(i - 1).opp.hurt) continue;
+            hits++;
+            ReviewRecord.Fighter me = r.ticks.get(i - 1).self;
+            double ex = me.x, ey = me.y + (me.sneaking ? EYE_SNEAK : EYE), ez = me.z;
+            double yr = Math.toRadians(t.self.yaw), pr = Math.toRadians(t.self.pitch);
+            double dx = -Math.sin(yr) * Math.cos(pr), dy = -Math.sin(pr), dz = Math.cos(yr) * Math.cos(pr);
+            for (int d = 0; d <= MAX_LAG; d++) {
+                ReviewRecord.Fighter b = r.ticks.get(i - 1 - d).opp;
+                if (rayHitsBox(ex, ey, ez, dx, dy, dz, b.x - 0.3, b.y, b.z - 0.3, b.x + 0.3, b.y + 1.8, b.z + 0.3, 6.0)) on[d]++;
+            }
+        }
+        if (hits < 3) return DEFAULT_LAG;
+        int best = DEFAULT_LAG;
+        for (int d = 0; d <= MAX_LAG; d++) {
+            if (on[d] > on[best] || (on[d] == on[best] && Math.abs(d - DEFAULT_LAG) < Math.abs(best - DEFAULT_LAG))) best = d;
+        }
+        return best;
+    }
+
+    static boolean rayHitsBox(double ox, double oy, double oz, double dx, double dy, double dz,
+                              double x0, double y0, double z0, double x1, double y1, double z1, double reach) {
+        double[] o = {ox, oy, oz}, d = {dx, dy, dz}, lo = {x0, y0, z0}, hi = {x1, y1, z1};
+        double t0 = 0, t1 = reach;
+        for (int k = 0; k < 3; k++) {
+            if (Math.abs(d[k]) < 1e-9) {
+                if (o[k] < lo[k] || o[k] > hi[k]) return false;
+                continue;
+            }
+            double a = (lo[k] - o[k]) / d[k], b = (hi[k] - o[k]) / d[k];
+            t0 = Math.max(t0, Math.min(a, b));
+            t1 = Math.min(t1, Math.max(a, b));
+        }
+        return t0 <= t1;
     }
 
     /** Where the bot would aim now, relative to the camera, in degrees {yaw, pitch}. */
