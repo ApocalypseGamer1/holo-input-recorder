@@ -15,6 +15,7 @@ import holorecorder.protocol.MenuClosedPayload;
 import holorecorder.protocol.MenuOpenPayload;
 import holorecorder.protocol.MenuUpdatePayload;
 import holorecorder.protocol.RoundStatePayload;
+import holorecorder.protocol.UpdatePromptPayload;
 import holorecorder.protocol.ReviewClipPayload;
 import holorecorder.protocol.ReviewClipRequestPayload;
 import holorecorder.protocol.ReviewDataPayload;
@@ -23,6 +24,7 @@ import holorecorder.protocol.WinBarPayload;
 import holorecorder.improve.ImproveClient;
 import holorecorder.menu.MenuClient;
 import holorecorder.review.ReviewClient;
+import holorecorder.update.UpdateClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -93,6 +95,11 @@ public final class HoloInputRecorder implements ClientModInitializer {
         PayloadTypeRegistry.serverboundPlay().register(ImproveActionPayload.TYPE, ImproveActionPayload.CODEC);
         ClientPlayNetworking.registerGlobalReceiver(ImproveOpenPayload.TYPE, (payload, context) ->
                 context.client().execute(() -> ImproveClient.open(context.client(), payload)));
+        // Mod updates (1.13.0): a receiver for the prompt tells the server this client can show it; the client checks the official release page itself.
+        PayloadTypeRegistry.clientboundPlay().register(UpdatePromptPayload.TYPE, UpdatePromptPayload.CODEC);
+        ClientPlayNetworking.registerGlobalReceiver(UpdatePromptPayload.TYPE, (payload, context) ->
+                context.client().execute(() -> UpdateClient.prompt(context.client(), payload)));
+        UpdateClient.init();
         ClientPlayNetworking.registerGlobalReceiver(holorecorder.protocol.LangPayload.TYPE, (payload, context) ->
                 context.client().execute(() -> Tr.server(payload.code())));
         ClientPlayNetworking.registerGlobalReceiver(ReviewDataPayload.TYPE, (payload, context) ->
@@ -126,6 +133,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
             Tr.server(null);
             WinBarHud.reset();
             ReviewClient.reset();
+            UpdateClient.reset();
         });
     }
 
