@@ -149,6 +149,11 @@ public final class ReviewClient {
 
     /** Ends the review; {@code tellServer} when the player closed it (the server then puts them back). */
     public static void stop(Minecraft mc, boolean tellServer) {
+        stop(mc, tellServer, true);
+    }
+
+    /** {@code closeScreen} is false when called from the screen's own removed(): Gui.setScreen is already closing it. */
+    public static void stop(Minecraft mc, boolean tellServer, boolean closeScreen) {
         if (!active) return;
         active = false;
         if (round != null) {
@@ -160,7 +165,7 @@ public final class ReviewClient {
         if (ghost != null && mc.level != null) mc.level.removeEntity(ghost.getId(), Entity.RemovalReason.DISCARDED);
         ghost = null;
         if (mc.player != null) mc.player.hurtTime = 0;
-        if (mc.gui.screen() instanceof ReviewScreen) mc.gui.setScreen(null);
+        if (closeScreen && mc.gui.screen() instanceof ReviewScreen) mc.gui.setScreen(null);
     }
 
     public static void reset() {
