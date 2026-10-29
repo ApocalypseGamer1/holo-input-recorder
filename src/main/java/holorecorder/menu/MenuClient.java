@@ -10,12 +10,15 @@ import net.minecraft.client.Minecraft;
 
 /** Receives the server's custom menus and sends back the player's clicks. Every method runs on the client thread. */
 public final class MenuClient {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("holorec-client");
+
     private MenuClient() {
     }
 
     public static void open(Minecraft mc, MenuOpenPayload p) {
         MenuState state = MenuState.of(p);
         if (state == null) return;
+        LOG.info("holorec: custom menu '{}' opened ({} tiles)", state.title.getString(), state.tiles().size());
         if (mc.gui.screen() instanceof CustomMenuScreen screen) screen.replace(state);
         else mc.gui.setScreen(new CustomMenuScreen(state));
     }
