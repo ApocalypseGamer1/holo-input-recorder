@@ -7,6 +7,8 @@ import holorecorder.protocol.ClientModsPayload;
 import holorecorder.protocol.ClientModsV2Payload;
 import holorecorder.protocol.IntegrityChallengePayload;
 import holorecorder.protocol.IntegrityResponsePayload;
+import holorecorder.protocol.DocActionPayload;
+import holorecorder.protocol.DocOpenPayload;
 import holorecorder.protocol.ImproveActionPayload;
 import holorecorder.protocol.ImproveOpenPayload;
 import holorecorder.protocol.MenuClickPayload;
@@ -21,6 +23,7 @@ import holorecorder.protocol.ReviewClipRequestPayload;
 import holorecorder.protocol.ReviewDataPayload;
 import holorecorder.protocol.ReviewEndPayload;
 import holorecorder.protocol.WinBarPayload;
+import holorecorder.doc.DocClient;
 import holorecorder.improve.ImproveClient;
 import holorecorder.menu.MenuClient;
 import holorecorder.review.ReviewClient;
@@ -95,6 +98,11 @@ public final class HoloInputRecorder implements ClientModInitializer {
         PayloadTypeRegistry.serverboundPlay().register(ImproveActionPayload.TYPE, ImproveActionPayload.CODEC);
         ClientPlayNetworking.registerGlobalReceiver(ImproveOpenPayload.TYPE, (payload, context) ->
                 context.client().execute(() -> ImproveClient.open(context.client(), payload)));
+        // Document screen (1.14.0): guide, rules and privacy. A receiver for the open payload tells the server this client can draw it.
+        PayloadTypeRegistry.clientboundPlay().register(DocOpenPayload.TYPE, DocOpenPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(DocActionPayload.TYPE, DocActionPayload.CODEC);
+        ClientPlayNetworking.registerGlobalReceiver(DocOpenPayload.TYPE, (payload, context) ->
+                context.client().execute(() -> DocClient.open(context.client(), payload)));
         // Mod updates (1.13.0): a receiver for the prompt tells the server this client can show it; the client checks the official release page itself.
         PayloadTypeRegistry.clientboundPlay().register(UpdatePromptPayload.TYPE, UpdatePromptPayload.CODEC);
         ClientPlayNetworking.registerGlobalReceiver(UpdatePromptPayload.TYPE, (payload, context) ->
@@ -116,6 +124,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(WinBarHud::demoTick);
         ClientTickEvents.END_CLIENT_TICK.register(holorecorder.review.ReviewDemo::tick);
         ClientTickEvents.END_CLIENT_TICK.register(holorecorder.improve.ImproveDemo::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(holorecorder.doc.DocDemo::tick);
         RawInputCapture.screenProbe(() -> screenKind(Minecraft.getInstance()));
         ClientTickEvents.START_CLIENT_TICK.register(HoloInputRecorder::captureTick);
         // Mod list for data protection: once per connection (JOIN also fires after a transfer), only if the server declared
