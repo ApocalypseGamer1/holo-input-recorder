@@ -1,7 +1,12 @@
 package holorecorder.doc;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import holorecorder.doc.DocLayout.Bar;
+import holorecorder.doc.DocLayout.Choice;
 import holorecorder.doc.DocLayout.Fill;
+import holorecorder.doc.DocLayout.Hot;
+import holorecorder.doc.DocLayout.HotKind;
+import holorecorder.doc.DocLayout.Icon;
 import holorecorder.doc.DocLayout.Prim;
 import holorecorder.doc.DocLayout.Text;
 import holorecorder.menu.MenuLayout.Rect;
@@ -12,8 +17,17 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * The paged document screen (guide, rules, privacy): a dark panel with a coloured header, a chapter list on the left, the
@@ -30,6 +44,10 @@ public final class DocScreen extends Screen {
     private DocLayout.Result layout;
     private double scroll, listScroll;
     private boolean draggingBar, actionSent;
+    // the shown step or hotbar slot of each picture group on the page; the page's open time, for the bars growing in
+    private final Map<Integer, Integer> picks = new HashMap<>();
+    private final Map<String, ItemStack> stacks = new HashMap<>();
+    private long shownAt = System.currentTimeMillis();
 
     public DocScreen(DocModel.Doc data) {
         super(Component.literal(data.title()));
@@ -43,6 +61,8 @@ public final class DocScreen extends Screen {
         page = next.page();
         scroll = 0;
         listScroll = 0;
+        picks.clear();
+        shownAt = System.currentTimeMillis();
         actionSent = false;
         layoutAgain();
     }
@@ -102,17 +122,11 @@ public final class DocScreen extends Screen {
         drawList(g, mouseX, mouseY);
 
         DocLayout.Content content = layout.contents().get(page);
-        g.enableScissor(vp.x(), vp.y(), vp.x() + vp.w(), vp.y() + vp.h());
         int ox = vp.x(), oy = vp.y() - (int) Math.round(scroll);
-        for (Prim p : content.prims()) {
-            if (p instanceof Fill r) {
-                if (oy + r.y() > vp.y() + vp.h() || oy + r.y() + r.h() < vp.y()) continue;
-                g.fill(ox + r.x(), oy + r.y(), ox + r.x() + r.w(), oy + r.y() + r.h(), r.argb());
-            } else if (p instanceof Text t) {
-                if (oy + t.y() > vp.y() + vp.h() || oy + t.y() + f.lineHeight < vp.y()) continue;
-                g.text(f, t.text(), ox + t.x(), oy + t.y(), t.argb(), t.shadow());
-            }
-        }
+        Hot hover = hotAt(mouseX, mouseY);
+        if (hover != null && hover.kind() == HotKind.PICK) picks.put(hover.group(), hover.index());
+        g.enableScissor(vp.x(), vp.y(), vp.x() + vp.w(), vp.y() + vp.h());
+        for (Prim p : content.prims()) drawPrim(g, p, ox, oy, hover);
         g.disableScissor();
         drawScrollbar(g, vp);
 
@@ -125,6 +139,74 @@ public final class DocScreen extends Screen {
             button(g, layout.next(), ">", mouseX, mouseY, page < pages - 1);
             centred(g, layout.counter(), (page + 1) + " / " + pages, DocLayout.GREY);
         }
+        if (hover != null && hover.kind() == HotKind.TIP) tooltip(g, hover, mouseX, mouseY);
+    }
+
+    private void drawPrim(GuiGraphicsExtractor g, Prim p, int ox, int oy, Hot hover) {
+        Rect vp = layout.viewport();
+        int top = vp.y(), bottom = vp.y() + vp.h();
+        if (p instanceof Fill r) {
+            if (oy + r.y() > bottom || oy + r.y() + r.h() < top) return;
+            g.fill(ox + r.x(), oy + r.y(), ox + r.x() + r.w(), oy + r.y() + r.h(), r.argb());
+        } else if (p instanceof Text t) {
+            if (oy + t.y() > bottom || oy + t.y() + font.lineHeight < top) return;
+            g.text(font, t.text(), ox + t.x(), oy + t.y(), t.argb(), t.shadow());
+        } else if (p instanceof Icon i) {
+            if (oy + i.y() > bottom || oy + i.y() + 16 < top) return;
+            ItemStack stack = stackOf(i.item());
+            if (!stack.isEmpty()) g.item(stack, ox + i.x(), oy + i.y());
+        } else if (p instanceof Bar b) {
+            double t = Math.min(1, (System.currentTimeMillis() - shownAt) / 500.0);
+            int w = (int) Math.round(b.w() * b.frac() * (1 - Math.pow(1 - t, 3)));
+            g.fill(ox + b.x(), oy + b.y(), ox + b.x() + w, oy + b.y() + b.h(), b.argb());
+        } else if (p instanceof Choice c) {
+            if (picks.getOrDefault(c.group(), 0) == c.index()) for (Prim q : c.prims()) drawPrim(g, q, ox, oy, hover);
+        } else if (p instanceof Hot h && h.kind() == HotKind.BUTTON) {
+            Rect r = new Rect(ox + h.x(), oy + h.y(), h.w(), h.h());
+            box(g, r, h == hover ? BUTTON_HOVER : BUTTON, h == hover ? layout.accent() : BUTTON_BORDER);
+            centred(g, r, h.label(), 0xFFFFFFFF);
+        }
+    }
+
+    private ItemStack stackOf(String id) {
+        return stacks.computeIfAbsent(id, key -> {
+            try {
+                Identifier ident = Identifier.tryParse(key);
+                return ident == null ? ItemStack.EMPTY : new ItemStack(BuiltInRegistries.ITEM.getValue(ident));
+            } catch (RuntimeException e) {
+                return ItemStack.EMPTY;
+            }
+        });
+    }
+
+    /** The picture spot under the mouse, only inside the page's view. */
+    private Hot hotAt(double x, double y) {
+        if (layout == null) return null;
+        Rect vp = layout.viewport();
+        if (!vp.contains(x, y)) return null;
+        double cx = x - vp.x(), cy = y - vp.y() + Math.round(scroll);
+        for (Prim p : layout.contents().get(page).prims()) if (p instanceof Hot h && h.contains(cx, cy)) return h;
+        return null;
+    }
+
+    private void tooltip(GuiGraphicsExtractor g, Hot h, int mouseX, int mouseY) {
+        int maxW = Math.max(80, Math.min(220, width - 24));
+        List<FormattedCharSequence> lines = new ArrayList<>(font.split(Component.literal(h.label()).withColor(DocLayout.KEY), maxW));
+        lines.addAll(font.split(Component.literal(h.tip()), maxW));
+        g.setTooltipForNextFrame(lines, mouseX, mouseY);
+    }
+
+    /** A guide button: "page:N" turns to page N here; anything else goes to the server, which opens that menu. */
+    private void run(Hot h) {
+        click();
+        if (h.action().startsWith("page:")) {
+            try {
+                setPage(Integer.parseInt(h.action().substring(5).strip()));
+            } catch (NumberFormatException ignored) {
+            }
+            return;
+        }
+        DocClient.send(h.action());
     }
 
     private void drawList(GuiGraphicsExtractor g, int mouseX, int mouseY) {
@@ -187,6 +269,8 @@ public final class DocScreen extends Screen {
         if (index == page) return;
         page = index;
         scroll = 0;
+        picks.clear();
+        shownAt = System.currentTimeMillis();
         showChapter();
     }
 
@@ -265,6 +349,16 @@ public final class DocScreen extends Screen {
                         return true;
                     }
                 }
+                return true;
+            }
+            Hot hot = hotAt(x, y);
+            if (hot != null && hot.kind() == HotKind.BUTTON) {
+                run(hot);
+                return true;
+            }
+            if (hot != null && hot.kind() == HotKind.PICK) {
+                if (picks.getOrDefault(hot.group(), 0) != hot.index()) click();
+                picks.put(hot.group(), hot.index());
                 return true;
             }
             Rect vp = layout.viewport();

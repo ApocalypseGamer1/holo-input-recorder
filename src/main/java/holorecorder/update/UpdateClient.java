@@ -7,6 +7,7 @@ import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
@@ -15,7 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Wires the updater into the game: the launch check, the title-screen button, toasts, and the server's hint. Client thread only. */
+/** Wires the updater into the game: the launch check, the title and Esc menu button, toasts, and the server's hint. Client thread only. */
 public final class UpdateClient {
     private static final Logger LOG = LoggerFactory.getLogger("holorec-client");
     private static final AtomicBoolean PROMPTED = new AtomicBoolean();
@@ -27,7 +28,7 @@ public final class UpdateClient {
     public static void init() {
         ScreenEvents.AFTER_INIT.register((mc, screen, w, h) -> {
             try {
-                if (!(screen instanceof TitleScreen) || !UpdateService.enabled()) return;
+                if (!(screen instanceof TitleScreen || screen instanceof PauseScreen) || !UpdateService.enabled()) return;
                 addTitleButton(mc, screen);
                 // the check usually ends after the title screen is up
                 ScreenEvents.afterTick(screen).register(s -> addTitleButton(mc, s));
@@ -59,15 +60,21 @@ public final class UpdateClient {
     public static void prompt(Minecraft mc, UpdatePromptPayload p) {
         if (p.version() != UpdatePromptPayload.VERSION || !UpdateService.enabled() || !PROMPTED.compareAndSet(false, true)) return;
         if (UpdateService.phase() == UpdateService.Phase.MANUAL && UpdateService.available() != null) {
-            if (mc.gui.screen() == null) mc.gui.setScreen(new UpdateScreen(null, true));
+            show(mc, UpdateService.available().latest());
             return;
         }
         if (UpdateService.available() == null && !UpdateVersion.isNewer(p.latest(), UpdateService.ownVersion())) return;
         UpdateService.checkAsync(mc, a -> {
             if (UpdateService.phase() == UpdateService.Phase.DONE) return;
-            if (mc.gui.screen() == null) mc.gui.setScreen(new UpdateScreen(null, true));
-            else toast(mc, Tr.t("Holoplayer mod update"), Tr.t("Update available: version {0}", a.latest()));
+            show(mc, a.latest());
         });
+    }
+
+    /** Opens the prompt, also over the Esc menu. Over any other screen (maybe mid-fight) only a toast: the Esc menu keeps a button. */
+    private static void show(Minecraft mc, String latest) {
+        Screen s = mc.gui.screen();
+        if (s == null || s instanceof PauseScreen) mc.gui.setScreen(new UpdateScreen(s, true));
+        else toast(mc, Tr.t("Holoplayer mod update"), Tr.t("Update available: version {0}", latest));
     }
 
     public static void reset() {

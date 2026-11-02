@@ -15,7 +15,7 @@ import java.util.List;
  */
 public final class DocModel {
     public static final int DEFAULT_ACCENT = 0xFF4FD8FF;
-    private static final int MAX_PAGES = 200, MAX_BLOCKS = 300, MAX_RUNS = 60, MAX_TEXT = 4000;
+    private static final int MAX_PAGES = 200, MAX_BLOCKS = 300, MAX_RUNS = 60, MAX_TEXT = 4000, MAX_ENTRIES = 12;
 
     private DocModel() {
     }
@@ -24,10 +24,21 @@ public final class DocModel {
     public record Run(String text, boolean key) {
     }
 
-    public enum Kind { PARAGRAPH, BULLET, GAP }
+    /** Text blocks, then the pictures: item icons, the lobby hotbar, a chain of steps, a bar chart, a row of buttons. */
+    public enum Kind { PARAGRAPH, BULLET, GAP, ICONS, HOTBAR, STEPS, BARS, BUTTONS }
 
-    /** {@code mark} is the bullet's own marker ("1."), or "" for the default dot. */
-    public record Block(Kind kind, String mark, List<Run> runs) {
+    /**
+     * One picture or button: an item {@code icon} id ("" for none), a {@code label}, a {@code tip} (hover or step text; a bar's
+     * value text), a bar {@code value}, an ARGB {@code colour} (0: the accent), a button {@code action}, a hotbar {@code slot}.
+     */
+    public record Entry(String icon, String label, String tip, double value, int colour, String action, int slot) {
+    }
+
+    /** {@code mark} is the bullet's own marker ("1."), or "" for the default dot. {@code entries}: a picture block's parts. */
+    public record Block(Kind kind, String mark, List<Run> runs, List<Entry> entries) {
+        public Block(Kind kind, String mark, List<Run> runs) {
+            this(kind, mark, runs, List.of());
+        }
     }
 
     public record Page(String head, List<Block> blocks) {
@@ -82,9 +93,39 @@ public final class DocModel {
                 return new Block(Kind.PARAGRAPH, "", runs(o));
             case "bullet":
                 return new Block(Kind.BULLET, str(o, "mark").strip(), runs(o));
+            case "icons":
+                return visual(Kind.ICONS, o);
+            case "hotbar":
+                return visual(Kind.HOTBAR, o);
+            case "steps":
+                return visual(Kind.STEPS, o);
+            case "bars":
+                return visual(Kind.BARS, o);
+            case "buttons":
+                return visual(Kind.BUTTONS, o);
             default:
                 return null;
         }
+    }
+
+    /** A picture block; entries without a label are dropped, and a block left with none is dropped too. */
+    private static Block visual(Kind kind, JsonObject o) {
+        List<Entry> out = new ArrayList<>();
+        for (JsonElement e : array(o, "items")) {
+            if (out.size() >= MAX_ENTRIES) break;
+            if (!e.isJsonObject()) continue;
+            JsonObject eo = e.getAsJsonObject();
+            String label = clean(str(eo, "label")).strip();
+            if (label.isEmpty()) continue;
+            String action = str(eo, "action").strip();
+            if (kind == Kind.BUTTONS && action.isEmpty()) continue;
+            int slot = (int) number(eo, "slot", -1);
+            if (kind == Kind.HOTBAR && (slot < 0 || slot > 8)) continue;
+            String colour = str(eo, "color");
+            out.add(new Entry(str(eo, "icon").strip(), label, clean(str(eo, "tip")).strip(), Math.max(0, number(eo, "value", 0)),
+                    colour.isBlank() ? 0 : colour(colour), action, slot));
+        }
+        return out.isEmpty() ? null : new Block(kind, "", List.of(), List.copyOf(out));
     }
 
     private static List<Run> runs(JsonObject o) {

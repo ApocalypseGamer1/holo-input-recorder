@@ -22,7 +22,33 @@ public final class DocLayout {
         int width(String text);
     }
 
-    public sealed interface Prim permits Fill, Text {
+    public sealed interface Prim permits Fill, Text, Icon, Bar, Hot, Choice {
+    }
+
+    /** A 16 x 16 item picture. */
+    public record Icon(int x, int y, String item) implements Prim {
+    }
+
+    /** A bar that grows from its left edge to {@code frac} of {@code w} when the page opens. */
+    public record Bar(int x, int y, int w, int h, double frac, int argb) implements Prim {
+    }
+
+    /** What the mouse can do over a {@link Hot} spot. */
+    public enum HotKind { TIP, PICK, BUTTON }
+
+    /**
+     * A mouse spot. TIP: hover shows {@code label} and {@code tip}. PICK: hover or click makes {@code index} the shown choice of
+     * {@code group}. BUTTON: drawn as a button with {@code label}; a click runs {@code action}.
+     */
+    public record Hot(int x, int y, int w, int h, HotKind kind, int group, int index, String label, String tip, String action)
+            implements Prim {
+        public boolean contains(double px, double py) {
+            return px >= x && px < x + w && py >= y && py < y + h;
+        }
+    }
+
+    /** Drawn only while {@code index} is the shown choice of {@code group} (a step's text, a highlight). */
+    public record Choice(int group, int index, List<Prim> prims) implements Prim {
     }
 
     public record Fill(int x, int y, int w, int h, int argb) implements Prim {
@@ -180,7 +206,13 @@ public final class DocLayout {
             y += 6;
         }
         DocModel.Kind prev = null;
+        int group = 0;
         for (DocModel.Block b : p.blocks()) {
+            if (!b.entries().isEmpty()) {
+                y = DocVisuals.place(b, group++, y, w, m, accent, out);
+                prev = DocModel.Kind.PARAGRAPH;
+                continue;
+            }
             if (b.kind() == DocModel.Kind.GAP) {
                 if (prev != null) y += lh / 2 + 2;
                 prev = DocModel.Kind.GAP;
