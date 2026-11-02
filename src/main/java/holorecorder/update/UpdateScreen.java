@@ -64,10 +64,11 @@ public final class UpdateScreen extends Screen {
             return new Status(Tr.t("Close Minecraft, delete the old holo-input-recorder jar in your mods folder, then rename {0} to {1}.",
                     a.file() + ".new", a.file()), TEXT);
         }
+        // A swap done at start-up has no build: it is done all the same.
+        if (UpdateService.phase() == UpdateService.Phase.DONE) return new Status(Tr.t("Done. Close Minecraft and start it again to use {0}.", a.latest()), GOOD);
         if (a.build() == null) return new Status(Tr.t("This Minecraft version has no automatic update. Get the new mod from the Holoplayer website."), TEXT);
         return switch (UpdateService.phase()) {
             case DOWNLOADING -> new Status(Tr.t("Downloading... {0}%", UpdateService.percent()), GREY);
-            case DONE -> new Status(Tr.t("Done. Close Minecraft and start it again to use {0}.", a.latest()), GOOD);
             case FAILED -> new Status(Tr.t("Update failed. Try again, or get the mod from the Holoplayer website."), BAD);
             default -> new Status("", TEXT);
         };
