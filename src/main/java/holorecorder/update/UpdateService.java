@@ -99,12 +99,15 @@ public final class UpdateService {
             try {
                 Path mods = modsDir();
                 if (mods != null) {
-                    UpdateSwap.Staged staged = UpdateSwap.cleanup(mods, ownVersion());
+                    Path jar = ownJar();
+                    UpdateSwap.Staged staged = UpdateSwap.cleanup(mods, ownVersion(), jar);
                     PackInstance pack = PackInstance.detect(FabricLoader.getInstance().getGameDir());
                     if (staged != null && pack == PackInstance.NONE) {
                         Available a = new Available(ownVersion(), staged.version(), null, pack, staged.file());
                         available = a;
-                        phase = Phase.MANUAL;
+                        // A download that an older version could not swap in: this version can.
+                        boolean swapped = UpdateSwap.trySwap(jar, mods.resolve(staged.file() + ".new"), mods.resolve(staged.file()));
+                        phase = swapped ? Phase.DONE : Phase.MANUAL;
                         mc.execute(() -> found.accept(a));
                     }
                 }

@@ -30,10 +30,23 @@ class UpdateSwapTest {
         }
     }
 
+    /** Jars Fabric would load: hidden files are skipped. */
     private long modJars() throws IOException {
         try (Stream<Path> s = Files.list(mods)) {
-            return s.filter(p -> p.getFileName().toString().endsWith(".jar")).filter(p -> UpdateVerify.versionOf(p) != null).count();
+            return s.filter(p -> p.getFileName().toString().endsWith(".jar")).filter(p -> !hidden(p)).filter(p -> UpdateVerify.versionOf(p) != null).count();
         }
+    }
+
+    private static boolean hidden(Path p) {
+        try {
+            return Files.isHidden(p);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static boolean windows() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 
     @Test
@@ -57,11 +70,12 @@ class UpdateSwapTest {
             assertNotNull(held.getEntry("fabric.mod.json"));
             swapped = UpdateSwap.trySwap(old, staged, target);
         }
+        if (windows()) assertTrue(swapped, "Windows: the locked jar is hidden instead");
         if (swapped) {
             assertEquals(1, modJars());
             assertTrue(Files.exists(target));
             assertFalse(Files.exists(staged));
-            assertTrue(Files.exists(mods.resolve("holo-input-recorder-1.12.0.jar.disabled")));
+            assertTrue(Files.exists(mods.resolve("holo-input-recorder-1.12.0.jar.disabled")) || hidden(old));
         } else {
             assertTrue(Files.exists(staged), "the download must stay for the manual step");
             assertArrayEquals(oldBytes, Files.readAllBytes(old));
@@ -81,6 +95,41 @@ class UpdateSwapTest {
         assertArrayEquals(oldBytes, Files.readAllBytes(old));
         assertTrue(Files.exists(staged));
         assertFalse(Files.exists(mods.resolve("holo-input-recorder-1.12.0.jar.disabled")));
+    }
+
+    @Test
+    void theNextStartDeletesTheHiddenOldJarAndKeepsTheRunningOne() throws IOException {
+        Path old = put("holo-input-recorder-1.12.0.jar", jar("1.12.0"));
+        Path staged = put("holo-input-recorder-1.13.0.jar.new", jar("1.13.0"));
+        Path target = mods.resolve("holo-input-recorder-1.13.0.jar");
+        try (ZipFile held = new ZipFile(old.toFile())) {
+            if (!UpdateSwap.hideAndSwap(old, staged, target)) {
+                assertFalse(windows(), "Windows must be able to hide the locked jar");
+                return;   // no hidden flag on this file system
+            }
+        }
+        assertEquals(1, modJars());
+        assertNull(UpdateSwap.cleanup(mods, "1.13.0", target));
+        assertEquals(List.of("holo-input-recorder-1.13.0.jar"), names());
+    }
+
+    @Test
+    void cleanupNeverDeletesTheRunningJarEvenWhenHidden() throws IOException {
+        Path running = put("holo-input-recorder-1.13.0.jar", jar("1.13.0"));
+        if (!UpdateSwap.setHidden(running, true)) return;
+        assertNull(UpdateSwap.cleanup(mods, "1.13.0", running));
+        assertNull(UpdateSwap.cleanup(mods, "1.13.0", null));
+        assertTrue(Files.exists(running));
+    }
+
+    @Test
+    void aFailedMoveAfterHidingUnhidesTheOldJar() throws IOException {
+        Path old = put("holo-input-recorder-1.12.0.jar", jar("1.12.0"));
+        Path staged = put("holo-input-recorder-1.13.0.jar.new", jar("1.13.0"));
+        Path target = put("holo-input-recorder-1.13.0.jar", "in the way".getBytes());
+        assertFalse(UpdateSwap.hideAndSwap(old, staged, target));
+        assertFalse(hidden(old));
+        assertTrue(Files.exists(staged));
     }
 
     @Test
@@ -104,7 +153,7 @@ class UpdateSwapTest {
         Files.createDirectories(UpdateSwap.updateDir(mods));
         Path part = Files.write(UpdateSwap.updateDir(mods).resolve("x.jar.part"), new byte[] {1});
 
-        UpdateSwap.Staged staged = UpdateSwap.cleanup(mods, "1.12.0");
+        UpdateSwap.Staged staged = UpdateSwap.cleanup(mods, "1.12.0", null);
 
         assertEquals(new UpdateSwap.Staged("1.14.0", "holo-input-recorder-1.14.0.jar"), staged);
         assertEquals(List.of(".holoplayer-update", "holo-input-recorder-1.12.0.jar", "holo-input-recorder-1.14.0.jar.new",
@@ -115,12 +164,12 @@ class UpdateSwapTest {
     @Test
     void cleanupAcceptsTheMc262VersionSuffix() throws IOException {
         put("holo-input-recorder-1.13.0+mc26.2.jar.new", jar("1.13.0+mc26.2"));
-        assertEquals("1.13.0", UpdateSwap.cleanup(mods, "1.12.0+mc26.2").version());
-        assertNull(UpdateSwap.cleanup(mods, "1.13.0+mc26.2"));
+        assertEquals("1.13.0", UpdateSwap.cleanup(mods, "1.12.0+mc26.2", null).version());
+        assertNull(UpdateSwap.cleanup(mods, "1.13.0+mc26.2", null));
     }
 
     @Test
     void cleanupOnAMissingFolderDoesNotThrow() {
-        assertNull(UpdateSwap.cleanup(mods.resolve("nope"), "1.12.0"));
+        assertNull(UpdateSwap.cleanup(mods.resolve("nope"), "1.12.0", null));
     }
 }
