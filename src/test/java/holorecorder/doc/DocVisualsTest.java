@@ -27,7 +27,7 @@ class DocVisualsTest {
                   {"icon": "minecraft:compass", "label": "Kalibrierung", "tip": "Wir finden dein Niveau mit Bots bekannter Stärke."},
                   {"icon": "minecraft:writable_book", "label": "Aufnahme", "tip": "10 aufgenommene Runden."},
                   {"icon": "minecraft:enchanting_table", "label": "Training", "tip": "Deine Kopie entsteht."},
-                  {"icon": "minecraft:target", "label": "Herausforderungsbot", "tip": "Ein Bot lernt, deine Kopie zu schlagen."},
+                  {"icon": "minecraft:target", "label": "Challenge-Bot", "tip": "Ein Bot lernt, deine Kopie zu schlagen."},
                   {"icon": "minecraft:diamond_sword", "label": "Übung", "tip": "Spiel!"},
                   {"label": ""}, "junk"
                 ]}
@@ -108,6 +108,20 @@ class DocVisualsTest {
                         assertTrue(x >= 0 && x + w <= r.contentWidth(), where + " " + p + " width " + r.contentWidth());
                     }
                     assertTrue(y >= 0 && y + h <= c.height(), where + " " + p + " height " + c.height());
+                }
+            }
+        }
+    }
+
+    @Test
+    void noLabelWordIsCutWhenTheViewIsWideEnough() {
+        DocModel.Doc doc = DocModel.parse(PAGES);
+        for (int[] s : DocLayoutTest.REAL) {
+            DocLayout.Result r = DocLayout.compute(s[0], s[1], DocLayoutTest.METER, doc);
+            if (r.contentWidth() < 100) continue;
+            for (DocLayout.Content c : r.contents()) {
+                for (Prim p : c.prims()) {
+                    if (p instanceof Text t) assertFalse(t.text().endsWith("…"), s[0] + "x" + s[1] + " cut: " + t.text());
                 }
             }
         }

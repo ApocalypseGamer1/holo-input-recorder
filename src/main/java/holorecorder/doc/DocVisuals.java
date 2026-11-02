@@ -34,6 +34,13 @@ final class DocVisuals {
         };
     }
 
+    /** The widest word of any label: a box narrower than it would cut that word. */
+    private static int longestWord(List<DocModel.Entry> entries, Meter m) {
+        int most = 0;
+        for (DocModel.Entry e : entries) for (String word : e.label().split(" ")) most = Math.max(most, m.width(word));
+        return most;
+    }
+
     private static void slot(int x, int y, List<Prim> out) {
         out.add(new Fill(x, y, SLOT, SLOT, SLOT_EDGE));
         out.add(new Fill(x + 1, y + 1, SLOT - 2, SLOT - 2, SLOT_BG));
@@ -47,7 +54,9 @@ final class DocVisuals {
     private static int tiles(List<DocModel.Entry> entries, int y, int w, Meter m, List<Prim> out) {
         int lh = m.lineHeight();
         int tw = Math.max(Math.min(MIN_ICON, w), Math.min(MAX_ICON, w / entries.size()));
+        tw = Math.max(tw, Math.min(w, longestWord(entries, m) + 6));
         int perRow = Math.max(1, w / tw);
+        perRow = (entries.size() + (entries.size() + perRow - 1) / perRow - 1) / ((entries.size() + perRow - 1) / perRow);
         int rows = (entries.size() + perRow - 1) / perRow;
         int th = SLOT + 3 + 2 * (lh + 1);
         for (int i = 0; i < entries.size(); i++) {
@@ -114,7 +123,9 @@ final class DocVisuals {
     private static int steps(List<DocModel.Entry> entries, int group, int y, int w, Meter m, int accent, List<Prim> out) {
         int lh = m.lineHeight(), n = entries.size();
         int perRow = n;
-        while (perRow > 1 && (w - (perRow - 1) * ARROW) / perRow < MIN_STEP) perRow--;
+        int need = Math.max(MIN_STEP, Math.min(MAX_STEP, longestWord(entries, m) + 6));
+        while (perRow > 1 && (w - (perRow - 1) * ARROW) / perRow < need) perRow--;
+        perRow = (n + (n + perRow - 1) / perRow - 1) / ((n + perRow - 1) / perRow);   // even rows: 2 + 2, not 3 + 1
         int bw = Math.min(MAX_STEP, (w - (perRow - 1) * ARROW) / perRow);
         int bh = 4 + 16 + 3 + 2 * (lh + 1) + 2;
         int rows = (n + perRow - 1) / perRow;
