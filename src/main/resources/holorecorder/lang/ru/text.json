@@ -61,7 +61,7 @@
  "The bot is gone, so {0} cannot play here.": "Бота уже нет, поэтому {0} не может играть здесь.",
  "Too near the end of the round. Pick an earlier moment.": "Слишком близко к концу раунда. Выбери момент пораньше.",
  "{0}'s play stopped. Try again.": "{0}: игра остановилась. Попробуй снова.",
- "{0}'s play is not available for this round.": "{0}: игра недоступна для этого раунда.",
+ "{0} can only play from a marked moment. Pick a mark.": "{0} может играть только с отмеченного момента. Выбери отметку.",
  "No answer from the server. Try again.": "Сервер не ответил. Попробуй снова.",
  "Crit": "Крит",
  "Sprint hit": "Удар в беге",

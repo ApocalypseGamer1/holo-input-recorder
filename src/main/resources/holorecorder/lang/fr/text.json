@@ -61,7 +61,7 @@
  "The bot is gone, so {0} cannot play here.": "Le bot n'est plus là, {0} ne peut donc pas jouer ici.",
  "Too near the end of the round. Pick an earlier moment.": "Trop près de la fin de la manche. Choisis un moment plus tôt.",
  "{0}'s play stopped. Try again.": "Le jeu de {0} s'est arrêté. Réessaie.",
- "{0}'s play is not available for this round.": "Le jeu de {0} n'est pas disponible pour cette manche.",
+ "{0} can only play from a marked moment. Pick a mark.": "{0} ne peut jouer qu'à partir d'un moment marqué. Choisis une marque.",
  "No answer from the server. Try again.": "Pas de réponse du serveur. Réessaie.",
  "Crit": "Critique",
  "Sprint hit": "Coup sprinté",

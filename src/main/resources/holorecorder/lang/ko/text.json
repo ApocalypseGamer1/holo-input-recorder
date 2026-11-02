@@ -61,7 +61,7 @@
  "The bot is gone, so {0} cannot play here.": "봇이 사라져서 {0}이(가) 여기서 플레이할 수 없어요.",
  "Too near the end of the round. Pick an earlier moment.": "라운드 끝에 너무 가까워요. 더 앞의 순간을 고르세요.",
  "{0}'s play stopped. Try again.": "{0}의 플레이가 멈췄어요. 다시 해 보세요.",
- "{0}'s play is not available for this round.": "이 라운드에서는 {0}의 플레이를 쓸 수 없어요.",
+ "{0} can only play from a marked moment. Pick a mark.": "{0}은(는) 표시된 순간부터만 플레이할 수 있어요. 표시를 골라 주세요.",
  "No answer from the server. Try again.": "서버가 응답하지 않아요. 다시 해 보세요.",
  "Crit": "치명타",
  "Sprint hit": "달리기 타격",

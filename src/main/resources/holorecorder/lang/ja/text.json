@@ -61,7 +61,7 @@
  "The bot is gone, so {0} cannot play here.": "ボットがいなくなったため、{0}はここでプレイできません。",
  "Too near the end of the round. Pick an earlier moment.": "ラウンドの終わりに近すぎます。もっと前の瞬間を選んでください。",
  "{0}'s play stopped. Try again.": "{0}のプレイが止まりました。もう一度お試しください。",
- "{0}'s play is not available for this round.": "このラウンドでは{0}のプレイは利用できません。",
+ "{0} can only play from a marked moment. Pick a mark.": "{0}は印のついた場面からしかプレイできません。印を選んでください。",
  "No answer from the server. Try again.": "サーバーから応答がありません。もう一度お試しください。",
  "Crit": "クリティカル",
  "Sprint hit": "ダッシュ攻撃",

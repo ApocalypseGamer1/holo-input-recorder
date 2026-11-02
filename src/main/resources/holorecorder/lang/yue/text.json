@@ -61,7 +61,7 @@
  "The bot is gone, so {0} cannot play here.": "Bot 已經唔喺度，所以 {0} 喺度打唔到。",
  "Too near the end of the round. Pick an earlier moment.": "太近回合尾。請揀早啲嘅時刻。",
  "{0}'s play stopped. Try again.": "{0} 嘅打法停咗。請再試。",
- "{0}'s play is not available for this round.": "{0} 嘅打法喺呢個回合用唔到。",
+ "{0} can only play from a marked moment. Pick a mark.": "{0} 只可以由有標記嘅時刻開始玩。揀一個標記啦。",
  "No answer from the server. Try again.": "伺服器冇回應。請再試。",
  "Crit": "暴擊",
  "Sprint hit": "疾跑攻擊",
