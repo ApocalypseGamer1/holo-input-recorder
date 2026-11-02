@@ -12,14 +12,16 @@ import java.util.regex.Pattern;
 
 /**
  * Puts a verified jar in place without starting any program. A verified download waits as {@code <file>.new} in the mods folder
- * (a name Fabric ignores). The running jar is renamed to {@code .disabled} and the new one takes its name; if the game holds
- * the running jar open (Windows usually does) the rename fails, nothing changes, and the player finishes by hand.
+ * (a name Fabric ignores). The running jar is renamed to {@code .disabled} and the new one takes its name. Windows keeps the
+ * running jar locked, so there it is marked hidden instead (Fabric skips hidden files at the next start) and deleted by the
+ * next start's tidy-up. Only when neither works does the player finish by hand.
  */
 final class UpdateSwap {
     private static final Logger LOG = LoggerFactory.getLogger("holorec-client");
     /** Hidden folder inside mods/ for partial downloads; Fabric does not scan it. */
     static final String DIR = ".holoplayer-update";
     private static final Pattern NEW = Pattern.compile("holo-input-recorder[A-Za-z0-9._+-]*\\.jar\\.new");
+    private static final Pattern JAR = Pattern.compile("holo-input-recorder[A-Za-z0-9._+-]*\\.jar");
     private static final Pattern DISABLED = Pattern.compile("holo-input-recorder[A-Za-z0-9._+-]*\\.jar\\.disabled");
 
     /** A finished download that was not swapped in: {@code file} is the jar name it should get (without ".new"). */
@@ -42,8 +44,8 @@ final class UpdateSwap {
         try {
             Files.move(running, aside, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException | RuntimeException e) {
-            LOG.info("update: the running jar cannot be renamed ({}); manual step needed", e.toString());
-            return false;
+            LOG.info("update: the running jar cannot be renamed ({}); marking it hidden", e.toString());
+            return hideAndSwap(running, staged, target);
         }
         try {
             Files.move(staged, target);
@@ -59,11 +61,38 @@ final class UpdateSwap {
         }
     }
 
+    /** The locked-jar path: hide the running jar, then move the new one in; a failed move un-hides it. */
+    static boolean hideAndSwap(Path running, Path staged, Path target) {
+        if (!setHidden(running, true)) {
+            LOG.info("update: the running jar cannot be hidden either; manual step needed");
+            return false;
+        }
+        try {
+            Files.move(staged, target);
+            return true;
+        } catch (IOException | RuntimeException e) {
+            LOG.warn("update: could not move the new jar in: {}", e.toString());
+            if (!setHidden(running, false)) LOG.warn("update: could not un-hide the old jar");
+            return false;
+        }
+    }
+
+    /** True when the file ends up as asked (false where the file system has no hidden flag). */
+    static boolean setHidden(Path p, boolean hidden) {
+        try {
+            Files.setAttribute(p, "dos:hidden", hidden);
+            return Files.isHidden(p) == hidden;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
     /**
-     * Start-up tidy-up, silent and never throwing: removes our leftover {@code .disabled} jars, partial downloads, and any
-     * {@code .new} that is not newer than the running version. Returns the newest {@code .new} that is newer, else null.
+     * Start-up tidy-up, silent and never throwing: removes our leftover {@code .disabled} jars, our hidden jars other than
+     * {@code runningJar}, partial downloads, and any {@code .new} that is not newer than the running version. Returns the newest
+     * {@code .new} that is newer, else null.
      */
-    static Staged cleanup(Path modsDir, String running) {
+    static Staged cleanup(Path modsDir, String running, Path runningJar) {
         Staged best = null;
         try {
             Path part = updateDir(modsDir);
@@ -77,6 +106,8 @@ final class UpdateSwap {
                     String name = p.getFileName().toString();
                     if (!Files.isRegularFile(p)) continue;
                     if (DISABLED.matcher(name).matches()) {
+                        delete(p);
+                    } else if (JAR.matcher(name).matches() && Files.isHidden(p) && !sameFile(p, runningJar)) {
                         delete(p);
                     } else if (NEW.matcher(name).matches()) {
                         String version = UpdateVerify.versionOf(p);
@@ -95,6 +126,15 @@ final class UpdateSwap {
             LOG.info("update: tidy-up skipped: {}", e.toString());
         }
         return best;
+    }
+
+    // Unknown counts as the running jar, so it is never deleted by mistake.
+    private static boolean sameFile(Path p, Path runningJar) {
+        try {
+            return runningJar == null || Files.isSameFile(p, runningJar);
+        } catch (IOException | RuntimeException e) {
+            return true;
+        }
     }
 
     private static void delete(Path p) {
