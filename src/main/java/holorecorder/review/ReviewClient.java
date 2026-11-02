@@ -297,7 +297,7 @@ public final class ReviewClient {
             case ReviewClipPayload.NO_BOT -> Tr.t("The bot is gone, so {0} cannot play here.", botName());
             case ReviewClipPayload.TOO_LATE -> Tr.t("Too near the end of the round. Pick an earlier moment.");
             case ReviewClipPayload.FAILED -> Tr.t("{0}'s play stopped. Try again.", botName());
-            default -> Tr.t("{0}'s play is not available for this round.", botName());
+            default -> Tr.t("{0} can only play from a marked moment. Pick a mark.", botName());
         };
     }
 
