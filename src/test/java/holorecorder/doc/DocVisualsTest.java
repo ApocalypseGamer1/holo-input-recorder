@@ -1,5 +1,6 @@
 package holorecorder.doc;
 
+import holorecorder.doc.DocLayout.Anim;
 import holorecorder.doc.DocLayout.Bar;
 import holorecorder.doc.DocLayout.Choice;
 import holorecorder.doc.DocLayout.Fill;
@@ -24,8 +25,8 @@ class DocVisualsTest {
                 {"t": "p", "runs": ["Text first."]},
                 {"t": "gap"},
                 {"t": "steps", "items": [
-                  {"icon": "minecraft:compass", "label": "Kalibrierung", "tip": "Wir finden dein Niveau mit Bots bekannter Stärke."},
-                  {"icon": "minecraft:writable_book", "label": "Aufnahme", "tip": "10 aufgenommene Runden."},
+                  {"icon": "minecraft:compass", "label": "Kalibrierung", "tip": "Wir finden dein Niveau mit Bots bekannter Stärke.", "anim": "duel"},
+                  {"icon": "minecraft:writable_book", "label": "Aufnahme", "tip": "10 aufgenommene Runden.", "anim": "chest"},
                   {"icon": "minecraft:enchanting_table", "label": "Training", "tip": "Deine Kopie entsteht."},
                   {"icon": "minecraft:target", "label": "Challenge-Bot", "tip": "Ein Bot lernt, deine Kopie zu schlagen."},
                   {"icon": "minecraft:diamond_sword", "label": "Übung", "tip": "Spiel!"},
@@ -53,6 +54,10 @@ class DocVisualsTest {
                   {"label": "Einstellungen öffnen", "action": "open:settings"}, {"label": "Back to page 1", "action": "page:0"}
                 ]},
                 {"t": "buttons", "items": [{"label": "only broken"}]}
+              ]},
+              {"head": "Moving", "blocks": [
+                {"t": "anim", "items": [{"anim": "holo", "label": "Your holoplayer"}, {"anim": "sim"}, {"label": "no anim"}]},
+                {"t": "anim", "items": [{"label": "none"}]}
               ]}
             ]}""";
 
@@ -69,6 +74,30 @@ class DocVisualsTest {
         assertEquals(0xFF5FD38A, bar.get(2).entries().get(0).colour());
         assertEquals(0, bar.get(2).entries().get(1).colour());
         assertEquals(List.of("open:play", "open:settings", "page:0"), bar.get(3).entries().stream().map(DocModel.Entry::action).toList());
+    }
+
+    @Test
+    void movingPicturesAreReadAndPlaced() {
+        DocModel.Doc doc = DocModel.parse(PAGES);
+        List<DocModel.Block> moving = doc.pages().get(2).blocks();
+        assertEquals(1, moving.size(), "an anim block with no anim is dropped");
+        assertEquals(List.of("holo", "sim"), moving.get(0).entries().stream().map(DocModel.Entry::anim).toList());
+        assertEquals("duel", doc.pages().get(0).blocks().get(2).entries().get(0).anim());
+        assertEquals("", doc.pages().get(0).blocks().get(2).entries().get(2).anim());
+        for (int[] s : DocLayoutTest.REAL) {
+            DocLayout.Result r = DocLayout.compute(s[0], s[1], DocLayoutTest.METER, doc);
+            List<Prim> all = new ArrayList<>();
+            collect(r.contents().get(0).prims(), all);
+            List<Anim> inSteps = all.stream().filter(p -> p instanceof Anim).map(p -> (Anim) p).toList();
+            if (r.contentWidth() >= 108) {
+                assertEquals(List.of("duel", "chest"), inSteps.stream().map(Anim::id).toList(), s[0] + "x" + s[1]);
+                for (Anim a : inSteps) assertEquals(a.w() * 9 / 16, a.h());
+            }
+            List<Anim> page = r.contents().get(2).prims().stream().filter(p -> p instanceof Anim).map(p -> (Anim) p).toList();
+            assertEquals(2, page.size(), s[0] + "x" + s[1]);
+            assertFalse(page.get(0).x() < page.get(1).x() + page.get(1).w() && page.get(1).x() < page.get(0).x() + page.get(0).w()
+                    && page.get(0).y() < page.get(1).y() + page.get(1).h() && page.get(1).y() < page.get(0).y() + page.get(0).h(), "anims overlap");
+        }
     }
 
     @Test
@@ -103,6 +132,7 @@ class DocVisualsTest {
                     else if (p instanceof Icon i) { x = i.x(); w = 16; y = i.y(); h = 16; }
                     else if (p instanceof Bar b) { x = b.x(); w = b.w(); y = b.y(); h = b.h(); assertTrue(b.frac() >= 0 && b.frac() <= 1); }
                     else if (p instanceof Hot hot) { x = hot.x(); w = hot.w(); y = hot.y(); h = hot.h(); }
+                    else if (p instanceof Anim a) { x = a.x(); w = a.w(); y = a.y(); h = a.h(); assertTrue(w > 0 && h > 0); }
                     else continue;
                     if (r.contentWidth() >= 60) {
                         assertTrue(x >= 0 && x + w <= r.contentWidth(), where + " " + p + " width " + r.contentWidth());

@@ -22,11 +22,15 @@ public final class DocLayout {
         int width(String text);
     }
 
-    public sealed interface Prim permits Fill, Text, Icon, Bar, Hot, Choice {
+    public sealed interface Prim permits Fill, Text, Icon, Bar, Hot, Choice, Anim {
     }
 
     /** A 16 x 16 item picture. */
     public record Icon(int x, int y, String item) implements Prim {
+    }
+
+    /** A moving picture drawn by the screen in its box (see DocAnims); an unknown {@code id} draws nothing. */
+    public record Anim(int x, int y, int w, int h, String id) implements Prim {
     }
 
     /** A bar that grows from its left edge to {@code frac} of {@code w} when the page opens. */

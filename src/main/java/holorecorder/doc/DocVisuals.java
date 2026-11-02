@@ -1,5 +1,6 @@
 package holorecorder.doc;
 
+import holorecorder.doc.DocLayout.Anim;
 import holorecorder.doc.DocLayout.Bar;
 import holorecorder.doc.DocLayout.Choice;
 import holorecorder.doc.DocLayout.Fill;
@@ -14,11 +15,13 @@ import holorecorder.menu.TextFit;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Lays out the picture blocks of a document page (icons, hotbar, steps, bars, buttons) as {@link Prim}s. No game classes. */
+/** Lays out the picture blocks of a document page (icons, hotbar, steps, bars, buttons, anims) as {@link Prim}s. No game classes. */
 final class DocVisuals {
     static final int SLOT = 20, SLOT_BG = 0xFF0E1115, SLOT_EDGE = 0xFF3A414C, BOX = 0xFF1A1E25, BOX_ON = 0xFF263142,
             DETAIL = 0xFF12151A, TRACK = 0xFF2A2F38;
     private static final int ARROW = 12, MIN_STEP = 52, MAX_STEP = 96, MIN_ICON = 44, MAX_ICON = 76;
+    // an anim is 16:9, at most MAX_ANIM wide; beside a step's text only when the panel is SIDE wide, else above it
+    private static final int MAX_ANIM = 192, MIN_ANIM = 96, SIDE = 260;
 
     private DocVisuals() {
     }
@@ -30,6 +33,7 @@ final class DocVisuals {
             case STEPS -> steps(b.entries(), group, y, w, m, accent, out);
             case BARS -> bars(b.entries(), y, w, m, accent, out);
             case BUTTONS -> buttons(b.entries(), y, w, m, out);
+            case ANIM -> anims(b.entries(), y, w, m, out);
             default -> tiles(b.entries(), y, w, m, out);
         };
     }
@@ -78,23 +82,29 @@ final class DocVisuals {
     /** The detail panel under a hotbar or a chain of steps: the picked entry's label and tip, one choice per entry. */
     private static int detail(List<DocModel.Entry> entries, int group, int y, int w, Meter m, int accent, boolean withLabel, List<Prim> out) {
         int lh = m.lineHeight(), step = lh + 1;
+        boolean anims = entries.stream().anyMatch(e -> !e.anim().isEmpty()) && w - 12 >= MIN_ANIM;
+        boolean side = anims && w >= SIDE;
+        int aw = !anims ? 0 : side ? Math.min(MAX_ANIM, (w - 12) * 2 / 5) : Math.min(MAX_ANIM, w - 12), ah = aw * 9 / 16;
+        int tx = side ? 7 + aw + 8 : 7, textW = w - 5 - tx, textTop = anims && !side ? ah + 6 : 0;
         List<List<String>> lines = new ArrayList<>();
         int most = 1;
         for (DocModel.Entry e : entries) {
             List<String> l = new ArrayList<>();
             if (withLabel) l.add(e.label());
-            if (!e.tip().isEmpty()) l.addAll(TextFit.wrap(e.tip(), w - 12, 4, m::width));
+            if (!e.tip().isEmpty()) l.addAll(TextFit.wrap(e.tip(), textW, 4, m::width));
             lines.add(l);
             most = Math.max(most, l.size());
         }
-        int h = most * step + 8;
+        int h = Math.max(textTop + most * step, side ? ah : 0) + 8;
         out.add(new Fill(0, y, w, h, DETAIL));
         out.add(new Fill(0, y, 2, h, accent));
         for (int i = 0; i < entries.size(); i++) {
             List<Prim> shown = new ArrayList<>();
-            int ty = y + 4;
+            String anim = entries.get(i).anim();
+            if (anims && !anim.isEmpty()) shown.add(new Anim(side ? 7 : (w - aw) / 2, y + 4, aw, ah, anim));
+            int ty = y + 4 + (anims && !anim.isEmpty() ? textTop : 0);
             for (int k = 0; k < lines.get(i).size(); k++) {
-                shown.add(new Text(7, ty, lines.get(i).get(k), withLabel && k == 0 ? DocLayout.KEY : DocLayout.TEXT, true));
+                shown.add(new Text(tx, ty, lines.get(i).get(k), withLabel && k == 0 ? DocLayout.KEY : DocLayout.TEXT, true));
                 ty += step;
             }
             out.add(new Choice(group, i, List.copyOf(shown)));
@@ -171,6 +181,31 @@ final class DocVisuals {
             if (!e.tip().isEmpty()) out.add(new Text(bx + 4, ry + 4, TextFit.ellipsize(e.tip(), bw - 8, m::width), 0xFFFFFFFF, true));
         }
         return y + entries.size() * (rowH + 3);
+    }
+
+    /** Moving pictures side by side (one per row when narrow), each with its label under it. */
+    private static int anims(List<DocModel.Entry> entries, int y, int w, Meter m, List<Prim> out) {
+        int lh = m.lineHeight(), gap = 8, n = entries.size();
+        int aw = Math.min(MAX_ANIM, w - 2), perRow = Math.max(1, Math.min(n, (w - 2 + gap) / (aw + gap)));
+        if (perRow == 1 && n > 1 && (w - 2 - gap) / 2 >= MIN_ANIM) {
+            perRow = 2;
+            aw = (w - 2 - gap) / 2;
+        }
+        int ah = aw * 9 / 16, ry = y;
+        for (int i = 0; i < n; i += perRow) {
+            int inRow = Math.min(perRow, n - i), x = (w - inRow * aw - (inRow - 1) * gap) / 2, labels = 0;
+            for (int k = 0; k < inRow; k++) {
+                DocModel.Entry e = entries.get(i + k);
+                int ax = x + k * (aw + gap);
+                out.add(new Fill(ax - 1, ry - 1, aw + 2, ah + 2, SLOT_EDGE));
+                out.add(new Anim(ax, ry, aw, ah, e.anim()));
+                List<String> label = e.label().isEmpty() ? List.of() : TextFit.wrap(e.label(), aw, 2, m::width);
+                for (int j = 0; j < label.size(); j++) centred(label.get(j), ax, aw, ry + ah + 3 + j * (lh + 1), DocLayout.GREY, m, out);
+                labels = Math.max(labels, label.size());
+            }
+            ry += ah + 3 + labels * (lh + 1) + 6;
+        }
+        return ry;
     }
 
     /** A row of buttons (in rows when narrow), centred. */

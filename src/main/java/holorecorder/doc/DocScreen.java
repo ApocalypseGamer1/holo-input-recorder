@@ -1,6 +1,7 @@
 package holorecorder.doc;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import holorecorder.doc.DocLayout.Anim;
 import holorecorder.doc.DocLayout.Bar;
 import holorecorder.doc.DocLayout.Choice;
 import holorecorder.doc.DocLayout.Fill;
@@ -47,7 +48,7 @@ public final class DocScreen extends Screen {
     // the shown step or hotbar slot of each picture group on the page; the page's open time, for the bars growing in
     private final Map<Integer, Integer> picks = new HashMap<>();
     private final Map<String, ItemStack> stacks = new HashMap<>();
-    private long shownAt = System.currentTimeMillis();
+    private long shownAt = System.currentTimeMillis(), animAt = shownAt;   // animAt: when the moving pictures last restarted
 
     public DocScreen(DocModel.Doc data) {
         super(Component.literal(data.title()));
@@ -62,7 +63,7 @@ public final class DocScreen extends Screen {
         scroll = 0;
         listScroll = 0;
         picks.clear();
-        shownAt = System.currentTimeMillis();
+        shownAt = animAt = System.currentTimeMillis();
         actionSent = false;
         layoutAgain();
     }
@@ -124,7 +125,7 @@ public final class DocScreen extends Screen {
         DocLayout.Content content = layout.contents().get(page);
         int ox = vp.x(), oy = vp.y() - (int) Math.round(scroll);
         Hot hover = hotAt(mouseX, mouseY);
-        if (hover != null && hover.kind() == HotKind.PICK) picks.put(hover.group(), hover.index());
+        if (hover != null && hover.kind() == HotKind.PICK) pick(hover);
         g.enableScissor(vp.x(), vp.y(), vp.x() + vp.w(), vp.y() + vp.h());
         for (Prim p : content.prims()) drawPrim(g, p, ox, oy, hover);
         g.disableScissor();
@@ -159,6 +160,11 @@ public final class DocScreen extends Screen {
             double t = Math.min(1, (System.currentTimeMillis() - shownAt) / 500.0);
             int w = (int) Math.round(b.w() * b.frac() * (1 - Math.pow(1 - t, 3)));
             g.fill(ox + b.x(), oy + b.y(), ox + b.x() + w, oy + b.y() + b.h(), b.argb());
+        } else if (p instanceof Anim a) {
+            if (oy + a.y() > bottom || oy + a.y() + a.h() < top) return;
+            g.enableScissor(ox + a.x(), oy + a.y(), ox + a.x() + a.w(), oy + a.y() + a.h());
+            DocAnims.draw(g, font, a.id(), ox + a.x(), oy + a.y(), a.w(), a.h(), System.currentTimeMillis() - animAt);
+            g.disableScissor();
         } else if (p instanceof Choice c) {
             if (picks.getOrDefault(c.group(), 0) == c.index()) for (Prim q : c.prims()) drawPrim(g, q, ox, oy, hover);
         } else if (p instanceof Hot h && h.kind() == HotKind.BUTTON) {
@@ -166,6 +172,12 @@ public final class DocScreen extends Screen {
             box(g, r, h == hover ? BUTTON_HOVER : BUTTON, h == hover ? layout.accent() : BUTTON_BORDER);
             centred(g, r, h.label(), 0xFFFFFFFF);
         }
+    }
+
+    /** Shows {@code h}'s choice; a newly picked step's moving picture starts from its beginning. */
+    private void pick(Hot h) {
+        Integer was = picks.put(h.group(), h.index());
+        if ((was == null ? 0 : was) != h.index()) animAt = System.currentTimeMillis();
     }
 
     private ItemStack stackOf(String id) {
@@ -270,7 +282,7 @@ public final class DocScreen extends Screen {
         page = index;
         scroll = 0;
         picks.clear();
-        shownAt = System.currentTimeMillis();
+        shownAt = animAt = System.currentTimeMillis();
         showChapter();
     }
 
@@ -358,7 +370,7 @@ public final class DocScreen extends Screen {
             }
             if (hot != null && hot.kind() == HotKind.PICK) {
                 if (picks.getOrDefault(hot.group(), 0) != hot.index()) click();
-                picks.put(hot.group(), hot.index());
+                pick(hot);
                 return true;
             }
             Rect vp = layout.viewport();

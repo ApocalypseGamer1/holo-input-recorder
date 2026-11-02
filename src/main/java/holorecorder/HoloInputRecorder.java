@@ -125,6 +125,7 @@ public final class HoloInputRecorder implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(holorecorder.review.ReviewDemo::tick);
         ClientTickEvents.END_CLIENT_TICK.register(holorecorder.improve.ImproveDemo::tick);
         ClientTickEvents.END_CLIENT_TICK.register(holorecorder.doc.DocDemo::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(holorecorder.review.ClipCapture::tick);
         RawInputCapture.screenProbe(() -> screenKind(Minecraft.getInstance()));
         ClientTickEvents.START_CLIENT_TICK.register(HoloInputRecorder::captureTick);
         // Mod list for data protection: once per connection (JOIN also fires after a transfer), only if the server declared
