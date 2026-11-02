@@ -25,13 +25,13 @@ public final class DocModel {
     }
 
     /** Text blocks, then the pictures: item icons, the lobby hotbar, a chain of steps, a bar chart, a row of buttons. */
-    public enum Kind { PARAGRAPH, BULLET, GAP, ICONS, HOTBAR, STEPS, BARS, BUTTONS }
+    public enum Kind { PARAGRAPH, BULLET, GAP, ICONS, HOTBAR, STEPS, BARS, BUTTONS, ANIM }
 
     /**
      * One picture or button: an item {@code icon} id ("" for none), a {@code label}, a {@code tip} (hover or step text; a bar's
-     * value text), a bar {@code value}, an ARGB {@code colour} (0: the accent), a button {@code action}, a hotbar {@code slot}.
+     * value text), a bar {@code value}, an ARGB {@code colour} (0: the accent), a button {@code action}, a hotbar {@code slot}, an {@code anim} id ("" for none: see DocAnims).
      */
-    public record Entry(String icon, String label, String tip, double value, int colour, String action, int slot) {
+    public record Entry(String icon, String label, String tip, double value, int colour, String action, int slot, String anim) {
     }
 
     /** {@code mark} is the bullet's own marker ("1."), or "" for the default dot. {@code entries}: a picture block's parts. */
@@ -103,12 +103,14 @@ public final class DocModel {
                 return visual(Kind.BARS, o);
             case "buttons":
                 return visual(Kind.BUTTONS, o);
+            case "anim":
+                return visual(Kind.ANIM, o);
             default:
                 return null;
         }
     }
 
-    /** A picture block; entries without a label are dropped, and a block left with none is dropped too. */
+    /** A picture block; entries without a label (an anim block's: without an anim) are dropped, and a block left with none too. */
     private static Block visual(Kind kind, JsonObject o) {
         List<Entry> out = new ArrayList<>();
         for (JsonElement e : array(o, "items")) {
@@ -116,14 +118,15 @@ public final class DocModel {
             if (!e.isJsonObject()) continue;
             JsonObject eo = e.getAsJsonObject();
             String label = clean(str(eo, "label")).strip();
-            if (label.isEmpty()) continue;
+            String anim = str(eo, "anim").strip();
+            if (kind == Kind.ANIM ? anim.isEmpty() : label.isEmpty()) continue;
             String action = str(eo, "action").strip();
             if (kind == Kind.BUTTONS && action.isEmpty()) continue;
             int slot = (int) number(eo, "slot", -1);
             if (kind == Kind.HOTBAR && (slot < 0 || slot > 8)) continue;
             String colour = str(eo, "color");
             out.add(new Entry(str(eo, "icon").strip(), label, clean(str(eo, "tip")).strip(), Math.max(0, number(eo, "value", 0)),
-                    colour.isBlank() ? 0 : colour(colour), action, slot));
+                    colour.isBlank() ? 0 : colour(colour), action, slot, anim));
         }
         return out.isEmpty() ? null : new Block(kind, "", List.of(), List.copyOf(out));
     }
